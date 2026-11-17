@@ -3,7 +3,23 @@
   "displayName": "Status Page",
   "version": "0.1.0",
   "description": "A calm live page for long Claude Code tasks: what it's doing now, the decisions it made, and what's next. Edit the plan on the page and the agent follows at its next step.",
-  "author": { "name": "agent-status-page contributors" },
+  "author": {
+    "name": "agent-status-page contributors"
+  },
   "license": "MIT",
-  "keywords": ["status", "dashboard", "steering", "plan", "decisions"]
+  "keywords": [
+    "status",
+    "dashboard",
+    "steering",
+    "plan",
+    "decisions"
+  ],
+  "mcpServers": {
+    "status": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/src/mcp.js"
+      ]
+    }
+  }
 }

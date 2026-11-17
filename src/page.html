@@ -101,6 +101,8 @@ h2 {
 .you-text b { font-weight: 600; color: var(--accent); margin-right: 6px; }
 .status { margin-top: 3px; font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .status.received { color: var(--accent); }
+.status svg { width: 13px; height: 13px; flex: none; color: var(--live); }
+main svg { width: 16px; height: 16px; }
 .pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: breathe 1.6s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: .25; } }
 
@@ -309,13 +311,17 @@ footer svg { width: 14px; height: 14px; flex: none; }
     return h('section', { 'aria-label': 'Now' },
       h('h2', {}, 'Now'),
       h('p', { class: 'now-text' + (idle ? ' quiet' : '') }, text),
-      (n.file || n.at) && h('div', { class: 'now-sub' },
+      (n.file || n.at) ? h('div', { class: 'now-sub' },
         idle && n.text ? h('span', {}, `Last: ${n.text}`) : (n.file && h('span', { class: 'file' }, n.file)),
-        !idle && n.at && h('span', { class: 'since', 'data-at': n.at }, ago(n.at))));
+        !idle && n.at ? h('span', { class: 'since', 'data-at': n.at }, ago(n.at)) : null) : null);
   }
 
   function decisionsSection() {
-    const list = state.decisions || [];
+    // A decision that replaces an overridden one goes right under it.
+    const all = state.decisions || [];
+    const list = [];
+    const place = d => { list.push(d); for (const r of all) if (r.supersedes === d.id) place(r); };
+    for (const d of all) if (!d.supersedes || !all.some(x => x.id === d.supersedes)) place(d);
     return h('section', { 'aria-label': 'Decisions' },
       h('h2', {}, 'Decisions'),
       list.length ? h('ul', { class: 'decisions' }, list.map(decision)) : h('p', { class: 'empty' }, 'None yet.'));
