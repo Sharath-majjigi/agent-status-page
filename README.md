@@ -10,7 +10,7 @@ A calm live page for long Claude Code tasks. It shows what the agent is doing no
 ## Install
 
 ```bash
-claude plugin marketplace add <github-user>/agent-status-page && claude plugin install status-page@agent-status-page
+claude plugin marketplace add Sharath-majjigi/agent-status-page && claude plugin install status-page@agent-status-page
 ```
 
 Needs Node 18+. Restart Claude Code after installing.
