@@ -39,6 +39,10 @@ async function main() {
       return;
     }
     case 'allow': // our own status tools only write to the local page, so don't prompt for them
+      if (input.agent_id) { // a subagent shares the session id: keep it from replacing the main agent's page
+        return print({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
+          permissionDecisionReason: 'Only the main agent updates the status page. Carry on with your task and report back to it.' } });
+      }
       return print({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Status page update' } });
 
     case 'pre': { // async: note the file being worked in
@@ -49,6 +53,7 @@ async function main() {
     }
     case 'post': { // between steps: deliver edits
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
+      if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them
       const message = await take(session);
       if (message) print({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } });
       return;
