@@ -1,0 +1,11 @@
+{
+  "name": "agent-status-page",
+  "owner": { "name": "agent-status-page contributors" },
+  "plugins": [
+    {
+      "name": "status-page",
+      "source": "./",
+      "description": "A calm live status page for long Claude Code tasks that you can edit to steer the agent."
+    }
+  ]
+}

@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='5' fill='%2322a06b'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #fafaf8;
+  --text: #1c1c1a;
+  --muted: #74746e;
+  --faint: #a6a69f;
+  --line: #e8e8e3;
+  --hover: #f1f1ed;
+  --field: #ffffff;
+  --accent: #3b5bdb;
+  --accent-soft: rgba(59, 91, 219, .09);
+  --live: #1f9d63;
+  --review: #9a5b00;
+  --review-soft: #f8edd8;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131312; --text: #ecece7; --muted: #9b9b94; --faint: #64645e; --line: #262624;
+    --hover: #1c1c1a; --field: #1a1a19; --accent: #8fa2ff; --accent-soft: rgba(143, 162, 255, .12);
+    --live: #3ccf8e; --review: #e7b555; --review-soft: rgba(231, 181, 85, .12);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131312; --text: #ecece7; --muted: #9b9b94; --faint: #64645e; --line: #262624;
+  --hover: #1c1c1a; --field: #1a1a19; --accent: #8fa2ff; --accent-soft: rgba(143, 162, 255, .12);
+  --live: #3ccf8e; --review: #e7b555; --review-soft: rgba(231, 181, 85, .12);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+main {
+  max-width: 620px; margin: 0 auto;
+  padding: max(64px, env(safe-area-inset-top)) 24px 56px;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* header */
+.meta { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 20px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; position: relative; }
+.live .dot { background: var(--live); }
+.live .dot::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--live);
+  opacity: 0; animation: ring 2.4s ease-out infinite;
+}
+@keyframes ring { 0% { transform: scale(.4); opacity: .55; } 80%, 100% { transform: scale(1.25); opacity: 0; } }
+.live .state { color: var(--text); }
+.sep { color: var(--faint); }
+h1 {
+  margin: 14px 0 0; font-size: 30px; line-height: 1.2; font-weight: 640; letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+section { margin-top: 52px; }
+h2 {
+  margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.empty { color: var(--faint); margin: 0; }
+
+/* now */
+.now-text { font-size: 20px; line-height: 1.4; font-weight: 500; letter-spacing: -0.01em; margin: 0; }
+.now-text.quiet { color: var(--muted); font-weight: 450; }
+.now-sub { margin-top: 8px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13.5px; color: var(--muted); }
+.file { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+
+/* decisions */
+.decisions { list-style: none; margin: 0; padding: 0; display: grid; gap: 22px; }
+.decision { position: relative; }
+.d-head { display: flex; align-items: baseline; gap: 10px; }
+.d-text { font-weight: 550; letter-spacing: -0.005em; }
+.d-reason { color: var(--muted); margin-top: 2px; font-size: 15px; }
+.tag {
+  flex: none; font-size: 11.5px; font-weight: 550; line-height: 1; padding: 4px 7px 4px; border-radius: 99px;
+  color: var(--review); background: var(--review-soft); letter-spacing: .01em; position: relative; top: -1px;
+}
+.d-actions { margin-left: auto; flex: none; }
+.link { color: var(--muted); font-size: 14px; padding: 2px 0; }
+.link:hover { color: var(--text); }
+@media (hover: hover) {
+  .decision .d-actions .link, .step .tools { opacity: 0; transition: opacity .15s; }
+  .decision:hover .d-actions .link, .decision:focus-within .d-actions .link,
+  .step:hover .tools, .step:focus-within .tools { opacity: 1; }
+}
+.overridden .d-text, .overridden .d-reason { color: var(--faint); text-decoration: line-through; text-decoration-color: var(--faint); text-decoration-thickness: 1px; }
+.you { margin-top: 10px; padding-left: 14px; border-left: 2px solid var(--accent); }
+.you-text { font-weight: 500; }
+.you-text b { font-weight: 600; color: var(--accent); margin-right: 6px; }
+.status { margin-top: 3px; font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.status.received { color: var(--accent); }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .25; } }
+
+form.override { margin-top: 12px; }
+textarea, input.edit {
+  width: 100%; font: inherit; font-size: 16px; color: var(--text); background: var(--field);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none; transition: border-color .15s, box-shadow .15s;
+}
+textarea { resize: none; min-height: 72px; line-height: 1.45; display: block; }
+textarea:focus, input.edit:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea::placeholder, input.edit::placeholder { color: var(--faint); }
+.form-row { display: flex; gap: 16px; align-items: center; justify-content: flex-end; margin-top: 10px; }
+.primary { background: var(--text); color: var(--bg); padding: 7px 14px; border-radius: 99px; font-size: 14px; font-weight: 550; }
+.primary:disabled { opacity: .35; cursor: default; }
+.hint { font-size: 12.5px; color: var(--faint); margin-right: auto; }
+
+/* next up */
+.steps { list-style: none; margin: 0; padding: 0; }
+.step {
+  display: flex; align-items: flex-start; gap: 4px; padding: 9px 0; border-top: 1px solid var(--line); position: relative;
+  background: var(--bg);
+}
+.step:last-child { border-bottom: 1px solid var(--line); }
+.num { width: 28px; flex: none; color: var(--faint); font-variant-numeric: tabular-nums; font-size: 14px; padding-top: 2px; }
+.step-text { flex: 1; min-width: 0; cursor: text; border-radius: 6px; overflow-wrap: anywhere; }
+.step-text:hover { color: var(--text); }
+.edited-mark { color: var(--accent); font-size: 12.5px; margin-left: 8px; white-space: nowrap; }
+.tools { display: flex; gap: 2px; flex: none; margin-top: -3px; }
+.icon {
+  width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--faint); touch-action: none;
+}
+.icon:hover { color: var(--text); background: var(--hover); }
+.icon svg { width: 16px; height: 16px; }
+.handle { cursor: grab; }
+.dragging { opacity: .97; box-shadow: 0 8px 28px rgba(0,0,0,.12); border-radius: 10px; z-index: 2; padding-left: 8px; padding-right: 8px; margin: 0 -8px; border-color: transparent !important; }
+body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none; }
+.step input.edit { padding: 4px 8px; margin: -5px 0 -5px -9px; width: calc(100% + 9px); border-radius: 8px; }
+.add { margin-top: 14px; color: var(--muted); font-size: 15px; display: inline-flex; gap: 8px; align-items: center; }
+.add:hover { color: var(--text); }
+.add svg { width: 14px; height: 14px; }
+.adding { margin-top: 12px; }
+
+footer {
+  margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
+  font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; min-height: 40px;
+}
+footer.waiting { color: var(--text); }
+footer.waiting .pulse { color: var(--accent); }
+footer.received { color: var(--accent); }
+footer svg { width: 14px; height: 14px; flex: none; }
+
+.waiting-page { padding-top: 18vh; }
+.waiting-page p { color: var(--muted); max-width: 420px; }
+
+@media (max-width: 520px) {
+  main { padding: max(40px, env(safe-area-inset-top)) 20px 40px; }
+  h1 { font-size: 25px; }
+  section { margin-top: 42px; }
+  .now-text { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite"></main>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const TOKEN = params.get('t') || '';
+  const theme = params.get('theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  let sessionId = location.hash.slice(1);
+  let state = null;
+  let connected = false;
+  // UI state that must survive live updates
+  const ui = { overrideOpen: null, overrideDraft: '', editingStep: null, adding: false, dragging: false };
+  let deferred = false;
+
+  const app = document.getElementById('app');
+  const h = (tag, attrs = {}, ...kids) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
+    return el;
+  };
+  const svg = (d, extra = '') => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 16 16'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '1.6'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = d + extra;
+    return s;
+  };
+  const ICON = {
+    grip: () => svg('<circle cx="6" cy="4" r=".9" fill="currentColor" stroke="none"/><circle cx="10" cy="4" r=".9" fill="currentColor" stroke="none"/><circle cx="6" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r=".9" fill="currentColor" stroke="none"/><circle cx="10" cy="12" r=".9" fill="currentColor" stroke="none"/>'),
+    x: () => svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
+    plus: () => svg('<path d="M8 3.5v9M3.5 8h9"/>'),
+    check: () => svg('<path d="M3.5 8.5l3 3 6-7"/>'),
+  };
+
+  const ago = t => {
+    if (!t) return '';
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 45) return 'just now';
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m}m`;
+    const hr = Math.floor(m / 60);
+    return `${hr}h ${m % 60}m`;
+  };
+
+  // ---------- network ----------
+  async function post(path, body) {
+    const res = await fetch(path, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-token': TOKEN },
+      body: JSON.stringify({ session: state.id, ...body }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const next = await res.json();
+    if (next && next.id === state.id) { state = next; render(); }
+  }
+
+  let es;
+  function connect() {
+    es && es.close();
+    es = new EventSource(`/api/events?t=${encodeURIComponent(TOKEN)}&s=${encodeURIComponent(sessionId || '*')}`);
+    es.addEventListener('open', () => { connected = true; render(); });
+    es.addEventListener('state', e => {
+      const next = JSON.parse(e.data);
+      if (next && !sessionId) { sessionId = next.id; history.replaceState(null, '', '#' + sessionId); connect(); }
+      state = next;
+      connected = true;
+      render();
+    });
+    es.addEventListener('error', () => { connected = false; render(); });
+  }
+  window.addEventListener('hashchange', () => { sessionId = location.hash.slice(1); connect(); });
+
+  // ---------- render ----------
+  function busy() { return ui.overrideOpen || ui.editingStep || ui.adding || ui.dragging; }
+
+  // Live updates call render(); the user's own actions call paint().
+  function render() {
+    // Don't rebuild under the user's cursor; catch up when they finish.
+    if (busy()) { deferred = true; renderHeaderOnly(); return; }
+    paint();
+  }
+  function paint() {
+    deferred = false;
+    const focusAdd = document.activeElement && document.activeElement.classList.contains('add');
+    app.replaceChildren(...(state ? page() : waiting()));
+    if (focusAdd) app.querySelector('.add')?.focus();
+    document.title = state && state.title ? `${state.title} · ${statusLabel()}` : 'Status';
+  }
+  function renderHeaderOnly() {
+    const meta = app.querySelector('.meta');
+    if (meta && state) meta.replaceWith(header());
+  }
+  function settle() { paint(); }
+
+  function statusLabel() {
+    if (!connected) return 'Reconnecting';
+    if (!state) return 'Waiting';
+    if (state.status === 'working') return 'Live';
+    if (state.status === 'ended') return 'Session ended';
+    return 'Idle';
+  }
+
+  function waiting() {
+    return [h('div', { class: 'waiting-page' },
+      h('div', { class: 'meta' + (connected ? '' : '') }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…')),
+      h('h1', {}, 'Waiting for Claude'),
+      h('p', {}, 'Start a multi-step task in Claude Code. This page fills in as it works.'))];
+  }
+
+  function header() {
+    const live = connected && state.status === 'working';
+    const project = (state.cwd || '').split('/').filter(Boolean).pop();
+    return h('div', { class: 'meta' + (live ? ' live' : '') },
+      h('span', { class: 'dot' }), h('span', { class: 'state' }, statusLabel()),
+      project && h('span', { class: 'sep' }, '·'), project && h('span', {}, project));
+  }
+
+  function page() {
+    return [
+      header(),
+      h('h1', {}, state.title || 'Untitled task'),
+      nowSection(),
+      decisionsSection(),
+      nextSection(),
+      footer(),
+    ];
+  }
+
+  function nowSection() {
+    const n = state.now || {};
+    const idle = state.status !== 'working';
+    let text = n.text || (idle ? 'Nothing yet' : 'Getting started');
+    if (state.status === 'ended') text = 'Session ended';
+    else if (idle && n.text) text = 'Waiting for you';
+    return h('section', { 'aria-label': 'Now' },
+      h('h2', {}, 'Now'),
+      h('p', { class: 'now-text' + (idle ? ' quiet' : '') }, text),
+      (n.file || n.at) && h('div', { class: 'now-sub' },
+        idle && n.text ? h('span', {}, `Last: ${n.text}`) : (n.file && h('span', { class: 'file' }, n.file)),
+        !idle && n.at && h('span', { class: 'since', 'data-at': n.at }, ago(n.at))));
+  }
+
+  function decisionsSection() {
+    const list = state.decisions || [];
+    return h('section', { 'aria-label': 'Decisions' },
+      h('h2', {}, 'Decisions'),
+      list.length ? h('ul', { class: 'decisions' }, list.map(decision)) : h('p', { class: 'empty' }, 'None yet.'));
+  }
+
+  function decision(d) {
+    const o = d.override;
+    const open = ui.overrideOpen === d.id;
+    const canChange = !o || o.state === 'waiting';
+    return h('li', { class: 'decision' + (o ? ' overridden' : '') },
+      h('div', { class: 'd-head' },
+        h('span', { class: 'd-text' }, d.text),
+        !o && d.confidence === 'low' && h('span', { class: 'tag', title: 'The agent was unsure about this one' }, 'review'),
+        !open && canChange && h('span', { class: 'd-actions' },
+          h('button', { class: 'link', onclick: () => openOverride(d) }, o ? 'Edit' : 'Change'))),
+      d.reason && h('div', { class: 'd-reason' }, d.reason),
+      o && !open && h('div', { class: 'you' },
+        h('div', { class: 'you-text' }, h('b', {}, 'You'), o.text),
+        overrideStatus(o)),
+      open && overrideForm(d));
+  }
+
+  function overrideStatus(o) {
+    if (o.state === 'waiting') return h('div', { class: 'status' }, h('span', { class: 'pulse' }), 'Waiting for the agent’s next step',
+      h('button', { class: 'link', onclick: () => post('/api/user/override', { id: currentOverrideId(o), text: '' }) }, 'Undo'));
+    if (o.state === 'received') return h('div', { class: 'status received' }, h('span', { class: 'pulse' }), 'Agent is re-planning');
+    return h('div', { class: 'status' }, ICON.check(), 'Agent changed course');
+  }
+  function currentOverrideId(o) { return (state.decisions.find(d => d.override === o) || {}).id; }
+
+  function openOverride(d) {
+    ui.overrideOpen = d.id;
+    ui.overrideDraft = d.override ? d.override.text : '';
+    paint();
+    const ta = app.querySelector('form.override textarea');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+  function closeOverride() { ui.overrideOpen = null; ui.overrideDraft = ''; paint(); }
+
+  function overrideForm(d) {
+    const ta = h('textarea', {
+      rows: 2, placeholder: 'Tell the agent what to do instead', 'aria-label': `Override: ${d.text}`,
+      oninput: e => { ui.overrideDraft = e.target.value; send.disabled = !e.target.value.trim(); },
+      onkeydown: e => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+        if (e.key === 'Escape') closeOverride();
+      },
+    });
+    ta.value = ui.overrideDraft;
+    const send = h('button', { class: 'primary', type: 'submit', disabled: !ui.overrideDraft.trim() }, 'Send');
+    const submit = async () => {
+      const text = ui.overrideDraft.trim();
+      if (!text) return;
+      ui.overrideOpen = null; ui.overrideDraft = '';
+      paint();
+      await post('/api/user/override', { id: d.id, text });
+    };
+    return h('form', { class: 'override', onsubmit: e => { e.preventDefault(); submit(); } },
+      ta,
+      h('div', { class: 'form-row' },
+        h('span', { class: 'hint' }, navigator.platform.includes('Mac') ? '⌘↵ to send' : 'Ctrl+Enter to send'),
+        h('button', { class: 'link', type: 'button', onclick: closeOverride }, 'Cancel'),
+        send));
+  }
+
+  // ----- next up -----
+  function nextSection() {
+    const steps = state.next || [];
+    return h('section', { 'aria-label': 'Next up' },
+      h('h2', {}, 'Next up'),
+      steps.length || ui.adding ? h('ol', { class: 'steps' }, steps.map(step)) : h('p', { class: 'empty' }, 'Nothing queued.'),
+      ui.adding ? addForm() : h('button', { class: 'add', onclick: () => { ui.adding = true; paint(); app.querySelector('.adding input')?.focus(); } }, ICON.plus(), 'Add a step'));
+  }
+
+  function step(n, i) {
+    const editing = ui.editingStep === n.id;
+    const li = h('li', { class: 'step', 'data-id': n.id },
+      h('span', { class: 'num' }, i + 1),
+      editing ? stepInput(n) : h('span', {
+        class: 'step-text', tabindex: 0, role: 'button', 'aria-label': `Edit step ${i + 1}: ${n.text}`,
+        onclick: () => startEdit(n), onkeydown: e => {
+          if (e.key === 'Enter') { e.preventDefault(); startEdit(n); }
+          if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(n.id, e.key === 'ArrowUp' ? -1 : 1); }
+        },
+      }, n.text, n.edited && h('span', { class: 'edited-mark' }, 'edited')),
+      !editing && h('span', { class: 'tools' },
+        h('button', { class: 'icon handle', 'aria-label': 'Drag to reorder (or Alt+Arrow keys)', title: 'Drag to reorder', onpointerdown: e => startDrag(e, li) }, ICON.grip()),
+        h('button', { class: 'icon', 'aria-label': `Remove step ${i + 1}`, title: 'Remove', onclick: () => save(state.next.filter(x => x.id !== n.id)) }, ICON.x())));
+    return li;
+  }
+
+  function startEdit(n) {
+    ui.editingStep = n.id;
+    paint();
+    const input = app.querySelector('.step input.edit');
+    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  }
+  function stepInput(n) {
+    let done = false;
+    const finish = commit => {
+      if (done) return; done = true;
+      const text = input.value.trim();
+      ui.editingStep = null;
+      if (commit && text && text !== n.text) save(state.next.map(x => x.id === n.id ? { ...x, text } : x));
+      else if (commit && !text) save(state.next.filter(x => x.id !== n.id));
+      else settle();
+    };
+    const input = h('input', {
+      class: 'edit', value: n.text, 'aria-label': 'Step', maxlength: 200,
+      onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') finish(false); },
+      onblur: () => finish(true),
+    });
+    return input;
+  }
+  function addForm() {
+    let done = false;
+    const finish = commit => {
+      if (done) return; done = true;
+      const text = input.value.trim();
+      ui.adding = false;
+      if (commit && text) save([...state.next, { text }]).then(() => { ui.adding = true; paint(); app.querySelector('.adding input')?.focus(); });
+      else settle();
+    };
+    const input = h('input', {
+      class: 'edit', placeholder: 'Describe a step and press Enter', 'aria-label': 'New step', maxlength: 200,
+      onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') finish(false); },
+      onblur: () => finish(!!input.value.trim()),
+    });
+    return h('div', { class: 'adding' }, input);
+  }
+  function move(id, delta) {
+    const list = [...state.next];
+    const i = list.findIndex(x => x.id === id), j = i + delta;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    save(list).then(() => app.querySelector(`.step[data-id="${CSS.escape(id)}"] .step-text`)?.focus());
+  }
+  function save(next) {
+    state = { ...state, next: next.map(x => ({ ...x })) };
+    paint();
+    return post('/api/user/plan', { next: next.map(({ id, text }) => ({ id, text })) }).catch(() => {});
+  }
+
+  function startDrag(e, li) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const list = li.parentElement;
+    const startY = e.clientY;
+    const origin = [...list.children].map(el => el.dataset.id).join();
+    ui.dragging = true;
+    li.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+    let offset = 0;
+    const onMove = ev => {
+      // Put the row before the first other row whose middle is below the pointer.
+      const others = [...list.children].filter(el => el !== li);
+      const target = others.find(el => { const r = el.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; }) || null;
+      if (li.nextElementSibling !== target) {
+        const before = li.offsetTop;
+        list.insertBefore(li, target);
+        offset += li.offsetTop - before;
+      }
+      li.style.transform = `translateY(${ev.clientY - startY - offset}px)`;
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      document.body.classList.remove('is-dragging');
+      ui.dragging = false;
+      const order = [...list.children].map(el => el.dataset.id);
+      if (order.join() !== origin) save(order.map(id => state.next.find(x => x.id === id)).filter(Boolean));
+      else paint();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  function footer() {
+    const e = state.edits || {};
+    if (state.status === 'ended') return h('footer', {}, 'This session has ended. Edits won’t reach it.');
+    if (e.state === 'waiting') return h('footer', { class: 'waiting' }, h('span', { class: 'pulse' }), 'Your edit reaches the agent at its next step.');
+    if (e.state === 'received') return h('footer', { class: 'received' }, ICON.check(), 'The agent has your edit.');
+    return h('footer', {}, 'Edits reach the agent at its next step.');
+  }
+
+  // keep the "2m" counters honest without re-rendering
+  setInterval(() => { for (const el of app.querySelectorAll('.since')) el.textContent = ago(Number(el.dataset.at)); }, 20000);
+
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

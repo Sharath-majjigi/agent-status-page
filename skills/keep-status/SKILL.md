@@ -1,0 +1,30 @@
+---
+name: keep-status
+description: Keep the live status page current during any multi-step coding task (three or more steps). Use it when starting a longer task, when the plan changes, when making a choice the user might disagree with, and when the user edits the plan or overrides a decision on the page.
+---
+
+# Keep the status page current
+
+The user watches a small page instead of interrupting you. It shows three things: what you're doing now, the decisions you made, and what's next. They can edit it, and you follow their edits.
+
+## When to update it
+
+1. **At the start** of a task with three or more steps, call `update_plan` with a short title and the steps still to do.
+2. **At each step**, call `set_now` with one plain line ("Adding the retry wrapper to the HTTP client") and the main file.
+3. **When you choose something** a reasonable person might choose differently (a library, an approach, a trade-off, an assumption about what the user wants), call `record_decision` with a one-line reason.
+   - `high`: obvious or forced by the codebase.
+   - `medium`: sensible default.
+   - `low`: a guess. The page flags these for the user to review, so be honest.
+4. **When a step is done or the plan changes**, call `update_plan` again with only the remaining steps.
+
+Write for a person glancing at their phone: short, concrete, no jargon, no tool names, no file dumps. Don't record trivial steps as decisions.
+
+## When the user edits the page
+
+Their edits reach you between steps as a message starting "Update from the user, made on the status page". Treat it as the user speaking:
+
+- An edited **Next up** list is now the plan. Follow it in that order; don't re-add steps they removed.
+- An **overridden decision** means do it their way. Undo or adjust work that depended on the old choice, record the new choice with `record_decision` and `supersedes` set to the old id, then call `update_plan`.
+- Say briefly in your next message to the user what you changed because of their edit.
+
+If an `update_plan` call is refused because the user edited first, re-plan from their version and call it again.
