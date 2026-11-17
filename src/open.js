@@ -10,7 +10,7 @@ const { ensureServer, pageUrl } = require('./client');
   if (!(await ensureServer())) { console.log('Could not start the status page server.'); process.exit(1); }
   const url = pageUrl(session);
   console.log(url);
-  if (process.argv.includes('--no-open')) return;
+  if (process.argv.includes('--no-open') || process.env.AGENT_STATUS_NO_OPEN) return;
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
   execFile(cmd, [url], () => {});
 })();

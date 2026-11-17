@@ -258,7 +258,8 @@ footer svg { width: 14px; height: 14px; flex: none; }
   function paint() {
     deferred = false;
     const focusAdd = document.activeElement && document.activeElement.classList.contains('add');
-    app.replaceChildren(...(state ? page() : waiting()));
+    const started = state && (state.title || state.now?.text || state.decisions?.length || state.next?.length);
+    app.replaceChildren(...(started ? page() : waiting()));
     if (focusAdd) app.querySelector('.add')?.focus();
     document.title = state && state.title ? `${state.title} · ${statusLabel()}` : 'Status';
   }
@@ -278,7 +279,7 @@ footer svg { width: 14px; height: 14px; flex: none; }
 
   function waiting() {
     return [h('div', { class: 'waiting-page' },
-      h('div', { class: 'meta' + (connected ? '' : '') }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…')),
+      h('div', { class: 'meta' }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…')),
       h('h1', {}, 'Waiting for Claude'),
       h('p', {}, 'Start a multi-step task in Claude Code. This page fills in as it works.'))];
   }
