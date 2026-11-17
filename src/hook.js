@@ -13,6 +13,17 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', d => (raw += d));
 process.stdin.on('end', () => main().catch(() => process.exit(0)));
 
+// True for `claude -p` runs: nobody is there to edit the page, and the run must be able to exit.
+function unattended() {
+  if (process.env.CLAUDE_CODE_SESSION_ATTENDED === '0') return true;
+  const pid = Number(process.env.CLAUDE_PID);
+  if (!pid) return false;
+  try {
+    const args = require('child_process').execFileSync('ps', ['-o', 'args=', '-p', String(pid)], { encoding: 'utf8' });
+    return /\s(-p|--print)(\s|$)/.test(args);
+  } catch { return false; }
+}
+
 const print = obj => process.stdout.write(JSON.stringify(obj));
 const take = session => request('POST', '/api/take', { session }, 1500).then(r => r && r.message);
 
@@ -55,7 +66,8 @@ async function main() {
       return;
     }
     case 'wait': { // runs in the background after a stop; wakes the agent if the user edits later
-      const r = await request('GET', `/api/wait?s=${encodeURIComponent(session)}`, undefined, 6 * 3600 * 1000);
+      if (unattended()) return; // print mode waits for background hooks, so a waiter would hang the run
+      const r = await request('GET', `/api/wait?s=${encodeURIComponent(session)}`, undefined, 2 * 3600 * 1000);
       if (r && r.message) {
         process.stderr.write(r.message + '\n');
         process.exit(2);

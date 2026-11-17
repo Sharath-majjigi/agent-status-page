@@ -19,11 +19,11 @@ Needs Node 18+. Restart Claude Code after installing.
 
 Give Claude any multi-step task. It shares a link to the page in its first update. You can also open the page any time with `/status-page:open`.
 
-- **Now:** one line on what it's doing, and the file it's in.
+- **Now:** the step in progress and the file it's in, on a track with finished and upcoming steps.
 - **Decisions:** each choice with a one-line reason. Unsure ones are marked *review*. Click **Change** to tell it what to do instead.
 - **Next up:** click a step to edit it, drag to reorder, × to remove, or add your own.
 
-Your edits reach the agent between its steps. If it has already stopped, they wake it up.
+Your edits reach the agent between its steps. In an open session, they wake it up even after it has stopped.
 
 ## How it works
 

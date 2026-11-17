@@ -15,7 +15,7 @@ The user watches a small page instead of interrupting you. It shows three things
    - `high`: obvious or forced by the codebase.
    - `medium`: sensible default.
    - `low`: a guess. The page flags these for the user to review, so be honest.
-4. **When a step is done or the plan changes**, call `update_plan` again with only the remaining steps.
+4. **When a step is done or the plan changes**, call `update_plan` again with the remaining steps, starting with the one you're on. Dropping a finished step from the front is how the page marks it done.
 
 Write for a person glancing at their phone: short, concrete, no jargon, no tool names, no file dumps. Don't record trivial steps as decisions.
 

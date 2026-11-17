@@ -48,7 +48,7 @@ function blank(id) {
     id, title: '', cwd: '', pid: 0, status: 'idle', updatedAt: Date.now(), touchedAt: 0,
     now: { text: '', file: '', at: 0 },
     decisions: [],
-    next: [], agentNext: [],
+    next: [], agentNext: [], done: [],
     pending: { plan: null, overrides: [] },
     edits: { state: 'none', at: 0 },
     shared: false,
@@ -58,7 +58,9 @@ function get(id) {
   if (!id) throw Object.assign(new Error('missing session'), { code: 400 });
   id = pidAlias.get(id) || id;
   if (!sessions.has(id)) sessions.set(id, blank(id));
-  return sessions.get(id);
+  const s = sessions.get(id);
+  s.done = s.done || [];
+  return s;
 }
 function latest() {
   let best = null;
@@ -131,6 +133,7 @@ function agentUpdatePlan(s, { title, next }) {
   if (s.pending.plan) return { accepted: false, message: takeEdits(s) };
   if (typeof title === 'string' && title.trim()) s.title = short(title, 120);
   if (Array.isArray(next)) {
+    markDone(s, next.map(t => short(t)).filter(Boolean));
     const pool = [...s.next];
     s.next = next.map(t => short(t)).filter(Boolean).map(text => {
       const i = pool.findIndex(n => n.text === text);
@@ -145,6 +148,15 @@ function agentUpdatePlan(s, { title, next }) {
   }
   changed(s, { touch: true });
   return { accepted: true };
+}
+// Steps the agent dropped from the front of its list are finished.
+// (A full rewrite with no overlap is a re-plan, not progress; an empty list means all done.)
+function markDone(s, nextTexts) {
+  const keep = new Set(nextTexts);
+  const firstKept = s.next.findIndex(n => keep.has(n.text));
+  const finished = firstKept === -1 ? (nextTexts.length ? [] : s.next) : s.next.slice(0, firstKept);
+  for (const n of finished) if (!keep.has(n.text)) s.done.push({ text: n.text, at: Date.now() });
+  if (s.done.length > 100) s.done = s.done.slice(-100);
 }
 function agentSetNow(s, { doing, file }) {
   s.now = { text: short(doing, 160), file: file ? rel(s, file) : s.now.file, at: Date.now() };

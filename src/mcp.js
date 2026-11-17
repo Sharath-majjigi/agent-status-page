@@ -22,7 +22,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Short task title, e.g. "Add rate limiting to the API"' },
-        next: { type: 'array', items: { type: 'string' }, description: 'Remaining steps in order, each one short line' },
+        next: { type: 'array', items: { type: 'string' }, description: 'Remaining steps in order, starting with the one you are on now. One short line each. Drop a step once it is finished.' },
       },
       required: ['next'],
     },
