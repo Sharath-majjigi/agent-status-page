@@ -24,6 +24,20 @@ function unattended() {
   } catch { return false; }
 }
 
+// The chain of parent pids above Claude, so a claude started from another session's shell can find it.
+function ancestors() {
+  const pid = Number(process.env.CLAUDE_PID);
+  if (!pid) return [];
+  try {
+    const parent = new Map(require('child_process').execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+      .trim().split('\n').map(l => l.trim().split(/\s+/).map(Number)));
+    const out = [];
+    for (let p = parent.get(pid); p && p > 1 && out.length < 12; p = parent.get(p)) out.push(p);
+    return out;
+  } catch { return []; }
+}
+const SESSION_IDS = /local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+
 const print = obj => process.stdout.write(JSON.stringify(obj));
 const take = session => request('POST', '/api/take', { session }, 1500).then(r => r && r.message);
 
@@ -35,7 +49,10 @@ async function main() {
   switch (mode) {
     case 'start': {
       await ensureServer();
-      await request('POST', '/api/hook/start', { session, cwd: input.cwd, pid: Number(process.env.CLAUDE_PID) || 0 });
+      await request('POST', '/api/hook/start', {
+        session, cwd: input.cwd, pid: Number(process.env.CLAUDE_PID) || 0,
+        hostId: process.env.CLAUDE_CODE_HOST_SESSION_ID || '', ancestors: ancestors(),
+      });
       return;
     }
     case 'allow': // our own status tools only write to the local page, so don't prompt for them
@@ -47,17 +64,33 @@ async function main() {
 
     case 'pre': { // async: note the file being worked in
       const t = input.tool_input || {};
-      const file = t.file_path || t.notebook_path || '';
+      const file = input.agent_id ? '' : t.file_path || t.notebook_path || ''; // a helper's file isn't the main agent's "now"
       await request('POST', '/api/hook/activity', { session, status: 'working', ...(file ? { file } : {}) }, 800);
       return;
     }
     case 'post': { // between steps: deliver edits
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them
+      if (/start_session$/.test(input.tool_name || '')) { // the desktop app started a side session for us
+        const hostIds = [...new Set(JSON.stringify(input.tool_response || '').match(SESSION_IDS) || [])];
+        if (hostIds.length) await request('POST', '/api/hook/started-session', { session, hostIds }, 1500).catch(() => {});
+      }
       const message = await take(session);
       if (message) print({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } });
       return;
     }
+    case 'helper': { // the main agent is starting a subagent
+      if (input.agent_id) return;
+      const t = input.tool_input || {};
+      await request('POST', '/api/hook/helper', { session, action: 'start', toolUseId: input.tool_use_id, type: t.subagent_type || 'general-purpose', text: t.description || '' }, 1500);
+      return;
+    }
+    case 'substart':
+      await request('POST', '/api/hook/helper', { session, action: 'bind', agentId: input.agent_id, type: input.agent_type }, 1500);
+      return;
+    case 'substop':
+      await request('POST', '/api/hook/helper', { session, action: 'stop', agentId: input.agent_id }, 1500);
+      return;
     case 'prompt': {
       await request('POST', '/api/hook/activity', { session, status: 'working' }, 800).catch(() => {});
       const message = await take(session);

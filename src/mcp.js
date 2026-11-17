@@ -12,7 +12,7 @@ const SESSION = process.env.CLAUDE_CODE_SESSION_ID || `pid:${process.ppid}`;
 
 const INSTRUCTIONS = `This session has a live status page the user watches and edits instead of asking you for updates.
 For any task with three or more steps: call update_plan first (a short title and the remaining steps), set_now when you start each step, and record_decision for each meaningful choice (with an honest confidence). Keep it brief: one plain line each. Skip it for quick questions.
-The user can edit the steps or override a decision on the page. Those edits reach you between steps and in tool results. Follow them.`;
+The user can edit the steps, override a decision, or add a follow-up to a step on the page. Those edits reach you between steps and in tool results. Follow them, and call followup_done when you finish a follow-up.`;
 
 const TOOLS = [
   {
@@ -54,6 +54,11 @@ const TOOLS = [
     },
   },
   {
+    name: 'followup_done',
+    description: 'Mark a follow-up the user added on the status page as done, once you have actually done it.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'The follow-up id, e.g. "f1"' } }, required: ['id'] },
+  },
+  {
     name: 'get_user_edits',
     description: 'Fetch edits the user made on the status page. They normally arrive on their own between steps, so you rarely need this.',
     inputSchema: { type: 'object', properties: {} },
@@ -71,6 +76,8 @@ async function run(name, args) {
   } else if (name === 'record_decision') {
     const r = await call('POST', '/api/agent/decision', { session, ...args });
     text = `Recorded as ${r.id}.`;
+  } else if (name === 'followup_done') {
+    await call('POST', '/api/agent/followup_done', { session, id: args.id });
   } else if (name === 'get_user_edits') {
     const r = await call('POST', '/api/take', { session });
     return r.message || 'No new edits from the user.';

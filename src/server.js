@@ -21,12 +21,16 @@ const subscribers = new Map(); // session id or '*' (latest) -> Set<res>
 const waiters = new Map(); // session id -> res (a Stop hook waiting to wake the idle agent)
 let lastRequest = Date.now();
 
+let seq = 0;
+const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
+
 // ---------- persistence ----------
 for (const f of fs.readdirSync(SESSIONS_DIR)) {
   try {
     const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
     if (Date.now() - (s.updatedAt || 0) > WEEK) { fs.unlinkSync(path.join(SESSIONS_DIR, f)); continue; }
     if (s.status === 'working') s.status = 'idle';
+    migrate(s);
     sessions.set(s.id, s);
   } catch {}
 }
@@ -40,8 +44,6 @@ function save(s) {
 const safeName = id => String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
 
 // ---------- state ----------
-let seq = 0;
-const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
 
 function blank(id) {
   return {
@@ -49,7 +51,8 @@ function blank(id) {
     now: { text: '', file: '', at: 0 },
     decisions: [],
     next: [], agentNext: [], done: [],
-    pending: { plan: null, overrides: [] },
+    followups: [], helpers: [], children: [], hostId: '', parent: null, stepStartedAt: 0,
+    pending: { plan: null, overrides: [], followups: [] },
     edits: { state: 'none', at: 0 },
     shared: false,
     earlier: [],
@@ -60,10 +63,19 @@ function get(id) {
   id = pidAlias.get(id) || id;
   if (!sessions.has(id)) sessions.set(id, blank(id));
   const s = sessions.get(id);
-  s.done = s.done || [];
-  s.earlier = s.earlier || [];
+  migrate(s);
   return s;
 }
+// Sessions saved by older versions lack the newer fields.
+function migrate(s) {
+  s.done = s.done || []; s.earlier = s.earlier || [];
+  s.followups = s.followups || []; s.helpers = s.helpers || []; s.children = s.children || [];
+  s.pending = s.pending || { plan: null, overrides: [] };
+  s.pending.followups = s.pending.followups || [];
+  for (const d of s.done) if (!d.id) d.id = newId('n');
+}
+const hasPending = s => !!(s.pending.plan || s.pending.overrides.length || s.pending.followups.length);
+const currentStepId = s => (s.next[0] && s.next[0].id) || (s.done.length ? s.done[s.done.length - 1].id : null);
 function latest() {
   let best = null;
   for (const s of sessions.values()) if (s.touchedAt && (!best || s.touchedAt > best.touchedAt)) best = s;
@@ -72,13 +84,32 @@ function latest() {
 function view(s) {
   if (!s) return null;
   const { pending, agentNext, pid, ...rest } = s;
+  rest.children = s.children.map(c => {
+    const x = findChild(c);
+    return x ? { ...c, id: x.id, title: x.title, status: x.status, done: x.done.length, total: x.done.length + x.next.length }
+      : { ...c, id: null, title: '', status: 'starting', done: 0, total: 0 };
+  });
+  const parent = s.parent && sessions.get(s.parent);
+  rest.parent = parent ? { id: parent.id, title: parent.title } : null;
   return rest;
+}
+function findChild(c) {
+  if (c.sessionId) return sessions.get(c.sessionId) || null;
+  if (c.hostId) for (const x of sessions.values()) if (x.hostId === c.hostId) return x;
+  return null;
+}
+// A side session changed: its parent's page shows its progress, so refresh that too.
+function parentsOf(s) {
+  const out = [];
+  for (const x of sessions.values()) if (x !== s && x.children.some(c => c.sessionId === s.id || (s.hostId && c.hostId === s.hostId))) out.push(x);
+  return out;
 }
 function changed(s, { touch = false } = {}) {
   s.updatedAt = Date.now();
   if (touch) s.touchedAt = s.updatedAt;
   save(s);
   broadcast(s);
+  for (const p of parentsOf(s)) broadcast(p);
 }
 function broadcast(s) {
   const msg = `event: state\ndata: ${JSON.stringify(view(s))}\n\n`;
@@ -93,12 +124,17 @@ const q = t => `“${t}”`;
 function takeEdits(s) {
   const plan = s.pending.plan;
   const overrides = s.pending.overrides.map(id => s.decisions.find(d => d.id === id)).filter(Boolean);
-  if (!plan && !overrides.length) return null;
+  const followups = s.pending.followups.map(id => s.followups.find(f => f.id === id)).filter(Boolean);
+  if (!plan && !overrides.length && !followups.length) return null;
   const lines = ['Update from the user, made on the status page while you were working:', ''];
   for (const d of overrides) {
     lines.push(`- The user overrode your decision ${q(d.text)} (id ${d.id}). In their words: ${q(d.override.text)}`);
     d.override.state = 'received';
     d.override.receivedAt = Date.now();
+  }
+  for (const f of followups) {
+    lines.push(`- The user added a follow-up (id ${f.id}) ${whereFollowup(s, f)}: ${q(f.text)}`);
+    f.state = 'received';
   }
   if (plan) {
     lines.push(`- The user edited your next steps: ${plan.summary}.`);
@@ -107,13 +143,22 @@ function takeEdits(s) {
     if (!s.next.length) lines.push('  (nothing: the user removed all remaining steps)');
   }
   lines.push('', 'Follow the user\'s version from here and re-plan if needed. Then call update_plan so the page matches'
-    + (overrides.length ? ', and record_decision with `supersedes` set to the overridden id.' : '.'));
-  s.pending = { plan: null, overrides: [] };
+    + (overrides.length ? ', and record_decision with `supersedes` set to the overridden id' : '')
+    + (followups.length ? '. When you finish a follow-up, call followup_done with its id.' : '.'));
+  s.pending = { plan: null, overrides: [], followups: [] };
   s.edits = { state: 'received', at: Date.now() };
   changed(s);
   return lines.join('\n');
 }
 
+function whereFollowup(s, f) {
+  const done = s.done.find(d => d.id === f.stepId);
+  if (done) return `on the finished step ${q(done.text)}. Go back and do it after your current step`;
+  const i = s.next.findIndex(n => n.id === f.stepId);
+  if (i === 0 && s.status === 'working') return `on your current step ${q(s.next[0].text)}. Do it as part of this step`;
+  if (i >= 0) return `on the step ${q(s.next[i].text)}. Do it as part of that step`;
+  return 'for this task. Do it after your current step';
+}
 function describePlanChange(before, after) {
   const beforeIds = new Map(before.map(n => [n.id, n]));
   const afterIds = new Set(after.map(n => n.id));
@@ -137,6 +182,7 @@ function agentUpdatePlan(s, { title, next }) {
   if (newTitle && isNewTask(s, newTitle, next)) archiveTask(s);
   if (newTitle) s.title = newTitle;
   if (Array.isArray(next)) {
+    const before = s.next[0] && s.next[0].id;
     markDone(s, next.map(t => short(t)).filter(Boolean));
     const pool = [...s.next];
     s.next = next.map(t => short(t)).filter(Boolean).map(text => {
@@ -144,6 +190,7 @@ function agentUpdatePlan(s, { title, next }) {
       return i >= 0 ? { id: pool.splice(i, 1)[0].id, text } : { id: newId('n'), text };
     });
     s.agentNext = s.next.map(n => ({ ...n }));
+    if (!s.stepStartedAt || (s.next[0] && s.next[0].id) !== before) s.stepStartedAt = Date.now();
   }
   // The agent re-planned after receiving the user's edits.
   if (s.edits.state === 'received') {
@@ -156,7 +203,7 @@ function agentUpdatePlan(s, { title, next }) {
 // A new title with none of the current steps in it means the agent moved on to another task.
 // (A renamed title over the same steps is the same task. Unsent overrides keep the task open.)
 function isNewTask(s, newTitle, next) {
-  if (!s.title || newTitle === s.title || s.pending.overrides.length) return false;
+  if (!s.title || newTitle === s.title || hasPending(s)) return false;
   if (!s.done.length && !s.decisions.length && !s.next.length) return false;
   const texts = new Set((Array.isArray(next) ? next : []).map(t => short(t)));
   return !s.next.some(n => texts.has(n.text));
@@ -166,10 +213,11 @@ function archiveTask(s) {
   s.earlier = s.earlier || [];
   s.earlier.unshift({
     id: newId('t'), title: s.title, endedAt: Date.now(),
-    done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions,
+    done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups,
   });
   if (s.earlier.length > 20) s.earlier.length = 20;
-  s.done = []; s.next = []; s.agentNext = []; s.decisions = [];
+  s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
+  s.helpers = s.helpers.filter(h => h.state === 'running');
   s.now = { text: '', file: '', at: 0 };
   s.edits = { state: 'none', at: Date.now() };
 }
@@ -179,7 +227,10 @@ function markDone(s, nextTexts) {
   const keep = new Set(nextTexts);
   const firstKept = s.next.findIndex(n => keep.has(n.text));
   const finished = firstKept === -1 ? (nextTexts.length ? [] : s.next) : s.next.slice(0, firstKept);
-  for (const n of finished) if (!keep.has(n.text)) s.done.push({ text: n.text, at: Date.now() });
+  finished.filter(n => !keep.has(n.text)).forEach((n, k) => s.done.push({
+    id: n.id, text: n.text, at: Date.now(),
+    took: k === 0 && s.stepStartedAt ? Date.now() - s.stepStartedAt : null, // only the step that was in progress has a real duration
+  }));
   if (s.done.length > 100) s.done = s.done.slice(-100);
 }
 function agentSetNow(s, { doing, file }) {
@@ -190,7 +241,7 @@ function agentSetNow(s, { doing, file }) {
 function agentDecision(s, { decision, reason, confidence, supersedes }) {
   const conf = ['high', 'medium', 'low'].includes(confidence) ? confidence : 'medium';
   s.dseq = Math.max(s.dseq || 0, s.decisions.length) + 1; // ids stay unique across tasks
-  const d = { id: 'd' + s.dseq, text: short(decision, 160), reason: short(reason, 240), confidence: conf, at: Date.now(), override: null, supersedes: null };
+  const d = { id: 'd' + s.dseq, text: short(decision, 160), reason: short(reason, 240), confidence: conf, at: Date.now(), override: null, supersedes: null, stepId: currentStepId(s) };
   const old = supersedes && s.decisions.find(x => x.id === supersedes);
   if (old) {
     d.supersedes = old.id;
@@ -206,6 +257,39 @@ function rel(s, file) {
   return file.replace(require('os').homedir(), '~');
 }
 
+function agentFollowupDone(s, id) {
+  const f = s.followups.find(x => x.id === String(id));
+  if (!f) throw Object.assign(new Error(`No follow-up with id ${id}`), { code: 404 });
+  f.state = 'done'; f.doneAt = Date.now();
+  s.pending.followups = s.pending.followups.filter(x => x !== f.id);
+  changed(s, { touch: true });
+}
+// Helpers are the main agent's subagents. The Agent tool call names them; SubagentStart/Stop give their id and end.
+function hookHelper(s, b) {
+  const type = short(b.type, 40) || 'agent';
+  if (b.action === 'start') {
+    s.helpers.push({ id: newId('h'), toolUseId: String(b.toolUseId || ''), agentId: '', type, text: short(b.text, 120), state: 'running', stepId: currentStepId(s), at: Date.now() });
+  } else if (b.action === 'bind') {
+    if (s.helpers.some(h => h.agentId === b.agentId)) return;
+    const h = [...s.helpers].reverse().find(x => !x.agentId && x.state === 'running' && (x.type === type || type === 'agent'));
+    if (h) h.agentId = String(b.agentId);
+    else s.helpers.push({ id: newId('h'), toolUseId: '', agentId: String(b.agentId), type, text: '', state: 'running', stepId: currentStepId(s), at: Date.now() });
+  } else if (b.action === 'stop') {
+    const h = s.helpers.find(x => x.agentId === b.agentId) || s.helpers.find(x => b.toolUseId && x.toolUseId === b.toolUseId);
+    if (h) { h.state = 'done'; h.doneAt = Date.now(); }
+  }
+  if (s.helpers.length > 40) s.helpers = s.helpers.slice(-40);
+  changed(s);
+}
+// The parent started a side session (desktop) or launched claude from its shell (seen by the child).
+function linkChild(parent, link) {
+  const dupe = parent.children.some(c => (link.hostId && c.hostId === link.hostId) || (link.sessionId && c.sessionId === link.sessionId));
+  if (dupe || (link.hostId && link.hostId === parent.hostId) || link.sessionId === parent.id) return;
+  parent.children.push({ ...link, stepId: currentStepId(parent), at: Date.now() });
+  if (parent.children.length > 30) parent.children = parent.children.slice(-30);
+  changed(parent);
+}
+
 // ---------- user side (the page) ----------
 function userEditPlan(s, items) {
   const clean = (Array.isArray(items) ? items : []).slice(0, 100)
@@ -218,7 +302,7 @@ function userEditPlan(s, items) {
   });
   const summary = describePlanChange(base, s.next);
   s.pending.plan = summary ? { summary } : null;
-  s.edits = summary || s.pending.overrides.length ? { state: 'waiting', at: Date.now() } : { state: 'none', at: Date.now() };
+  s.edits = { state: hasPending(s) ? 'waiting' : 'none', at: Date.now() };
   changed(s, { touch: true });
   wakeIfIdle(s);
 }
@@ -233,10 +317,28 @@ function userOverride(s, id, text) {
     d.override = { text, at: Date.now(), state: 'waiting' };
     if (!s.pending.overrides.includes(id)) s.pending.overrides.push(id);
   }
-  const anything = s.pending.plan || s.pending.overrides.length;
-  s.edits = { state: anything ? 'waiting' : 'none', at: Date.now() };
+  s.edits = { state: hasPending(s) ? 'waiting' : 'none', at: Date.now() };
   changed(s, { touch: true });
   wakeIfIdle(s);
+}
+function userFollowup(s, stepId, text) {
+  text = short(text, 300);
+  if (!text) throw Object.assign(new Error('empty follow-up'), { code: 400 });
+  s.fseq = (s.fseq || 0) + 1;
+  const f = { id: 'f' + s.fseq, stepId: String(stepId || currentStepId(s) || ''), text, state: 'waiting', at: Date.now() };
+  s.followups.push(f);
+  s.pending.followups.push(f.id);
+  s.edits = { state: 'waiting', at: Date.now() };
+  changed(s, { touch: true });
+  wakeIfIdle(s);
+}
+function userRemoveFollowup(s, id) {
+  const f = s.followups.find(x => x.id === String(id));
+  if (!f || f.state !== 'waiting') return; // once the agent has it, it stays
+  s.followups = s.followups.filter(x => x !== f);
+  s.pending.followups = s.pending.followups.filter(x => x !== f.id);
+  s.edits = { state: hasPending(s) ? 'waiting' : 'none', at: Date.now() };
+  changed(s, { touch: true });
 }
 
 // When the agent has stopped, a Stop hook may be waiting on us; hand it the edits so it wakes the agent.
@@ -260,7 +362,11 @@ setInterval(() => {
   for (const s of sessions.values()) {
     if (!s.pid || s.status === 'ended') continue;
     try { process.kill(s.pid, 0); } catch (e) {
-      if (e.code === 'ESRCH') { s.status = 'ended'; releaseWaiter(s.id); changed(s); }
+      if (e.code === 'ESRCH') {
+        s.status = 'ended';
+        for (const h of s.helpers) if (h.state === 'running') h.state = 'done';
+        releaseWaiter(s.id); changed(s);
+      }
     }
   }
   // Exit when nothing has used the server for a day; the next session starts it again.
@@ -342,12 +448,44 @@ const server = http.createServer(async (req, res) => {
     const s = p.startsWith('/api/') ? get(body.session) : null;
 
     switch (p) {
-      case '/api/hook/start':
+      case '/api/hook/start': {
         s.cwd = String(body.cwd || s.cwd);
         if (body.pid) { s.pid = Number(body.pid); pidAlias.set('pid:' + s.pid, s.id); }
+        if (body.hostId) s.hostId = String(body.hostId);
         if (s.status === 'ended') s.status = 'idle';
+        // Launched from another session's shell? Its Claude process is one of our ancestors.
+        const ancestors = (Array.isArray(body.ancestors) ? body.ancestors : []).map(Number).filter(Boolean);
+        if (!s.parent && ancestors.length) {
+          const parent = [...sessions.values()].find(x => x !== s && x.pid && ancestors.includes(x.pid) && x.status !== 'ended');
+          if (parent) { s.parent = parent.id; linkChild(parent, { sessionId: s.id }); }
+        }
+        if (!s.parent && s.hostId) {
+          const parent = [...sessions.values()].find(x => x !== s && x.children.some(c => c.hostId === s.hostId));
+          if (parent) s.parent = parent.id;
+        }
         changed(s);
         return send(res, 200, { ok: true });
+      }
+      case '/api/hook/helper':
+        hookHelper(s, body);
+        return send(res, 200, { ok: true });
+      case '/api/hook/started-session': {
+        for (const hostId of (Array.isArray(body.hostIds) ? body.hostIds : []).map(String)) {
+          linkChild(s, { hostId });
+          const child = findChild({ hostId });
+          if (child && !child.parent) { child.parent = s.id; changed(child); }
+        }
+        return send(res, 200, { ok: true });
+      }
+      case '/api/agent/followup_done':
+        agentFollowupDone(s, body.id);
+        return send(res, 200, { ok: true });
+      case '/api/user/followup':
+        userFollowup(s, body.stepId, body.text);
+        return send(res, 200, view(s));
+      case '/api/user/followup/remove':
+        userRemoveFollowup(s, body.id);
+        return send(res, 200, view(s));
       case '/api/hook/activity':
         if (body.file) s.now.file = rel(s, body.file);
         if (body.status) {

@@ -1,6 +1,6 @@
 # Status Page for Claude Code
 
-A calm live page for long Claude Code tasks. It shows what the agent is doing now, the decisions it made, and what's next. **Edit the plan or override a decision on the page, and the running agent follows at its next step.**
+A calm live page for long Claude Code tasks: the agent's steps as one map, from done to now to next. **Edit a step, add a follow-up, or override a decision, and the running agent follows at its next step.**
 
 <p>
   <img src="docs/desktop-light.png" width="62%" alt="Status page in light mode">
@@ -19,16 +19,17 @@ Needs Node 18+. Restart Claude Code after installing.
 
 Give Claude any multi-step task. It shares a link to the page in its first update. You can also open the page any time with `/status-page:open`.
 
-- **Now:** the step in progress and the file it's in, on a track with finished and upcoming steps.
-- **Decisions:** each choice with a one-line reason. Unsure ones are marked *review*. Click **Change** to tell it what to do instead.
-- **Next up:** click a step to edit it, drag to reorder, × to remove, or add your own.
-- **Earlier:** finished tasks from the same session, folded away with their steps and decisions.
+- **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing, the file it's in, and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead.
+- **Next up:** rename, reorder (drag or Move up/down), remove, or add steps.
+- **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done.
+- **Helpers and side sessions:** subagents show as gray branches on the step that started them. Side sessions the agent starts show as linked branches with their own progress; click one to open its page.
+- **Earlier:** finished tasks from the same session, folded away.
 
 Your edits reach the agent between its steps. In an open session, they wake it up even after it has stopped.
 
 ## How it works
 
-A plugin with three parts: an MCP server with four small tools the agent uses to update the page, hooks that hand your edits to the agent between steps, and a tiny local server that streams the page live. No dependencies, no accounts, no network calls.
+A plugin with three parts: an MCP server with a few small tools the agent uses to update the page, hooks that hand your edits to the agent between steps (and notice its subagents and side sessions), and a tiny local server that streams the page live. No dependencies, no accounts, no network calls.
 
 ## Privacy
 
