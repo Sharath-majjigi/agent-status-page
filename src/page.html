@@ -202,6 +202,30 @@ textarea::placeholder, input.edit::placeholder { color: var(--faint); }
 .primary:disabled { opacity: .35; cursor: default; }
 .hint { font-size: 12.5px; color: var(--faint); margin-right: auto; }
 
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.earlier { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.task-toggle { display: grid; grid-template-columns: 14px 1fr auto; align-items: baseline; gap: 10px; width: 100%; min-height: 40px; padding: 8px 0; text-align: left; color: var(--muted); }
+.task-toggle:hover, .task-toggle[aria-expanded="true"] { color: var(--text); }
+.task-toggle svg { width: 12px; height: 12px; align-self: center; transition: transform .15s; }
+.task-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.t-title { font-weight: 550; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-meta { color: var(--faint); font-size: 14px; white-space: nowrap; }
+.task-body { padding: 2px 0 14px 24px; display: grid; gap: 4px; font-size: 15px; }
+.task-body ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.t-step { display: flex; gap: 10px; align-items: baseline; color: var(--muted); }
+.t-step svg { width: 12px; height: 12px; flex: none; color: var(--faint); transform: translateY(1px); }
+.t-step.dropped { color: var(--faint); }
+.t-step.dropped .t-mark { flex: none; width: 12px; text-align: center; }
+@media (max-width: 520px) {
+  .task-toggle { grid-template-columns: 14px 1fr; row-gap: 2px; }
+  .task-toggle svg { align-self: start; margin-top: 6px; }
+  .t-title { white-space: normal; }
+  .t-meta { grid-column: 2; }
+}
+.t-decision { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; margin-top: 6px; }
+.t-decision .meter { transform: scale(.85); transform-origin: left top; }
+.t-decision .d-text { font-weight: 500; }
+.t-decision .d-reason { font-size: 14px; }
 footer {
   margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
   font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; min-height: 40px;
@@ -242,7 +266,7 @@ footer svg { width: 14px; height: 14px; }
   let state = null;
   let connected = false;
   // UI state that must survive live updates
-  const ui = { overrideOpen: null, overrideDraft: '', editingStep: null, adding: false, dragging: false, showDone: false };
+  const ui = { overrideOpen: null, overrideDraft: '', editingStep: null, adding: false, dragging: false, showDone: false, openTask: null };
 
   const app = document.getElementById('app');
   const h = (tag, attrs = {}, ...kids) => {
@@ -340,7 +364,7 @@ footer svg { width: 14px; height: 14px; }
     paint();
   }
   function paint() {
-    const started = state && (state.title || state.now?.text || state.decisions?.length || state.next?.length || state.done?.length);
+    const started = state && (state.title || state.now?.text || state.decisions?.length || state.next?.length || state.done?.length || state.earlier?.length);
     app.replaceChildren(...(started ? page() : waiting()));
     document.title = state && state.title ? `${state.title} · ${statusLabel()}` : 'Status';
   }
@@ -388,7 +412,7 @@ footer svg { width: 14px; height: 14px; }
   }
 
   function page() {
-    return [header(), h('h1', {}, state.title || 'Untitled task'), progress(), trackSection(), decisionsSection(), footer()];
+    return [header(), h('h1', {}, state.title || 'Untitled task'), progress(), trackSection(), decisionsSection(), earlierSection(), footer()];
   }
 
   // ----- now + next up, as one track -----
@@ -621,6 +645,33 @@ footer svg { width: 14px; height: 14px; }
         h('span', { class: 'hint' }, navigator.platform.includes('Mac') ? '⌘↵ to send' : 'Ctrl+Enter to send'),
         h('button', { class: 'link', type: 'button', onclick: closeOverride }, 'Cancel'),
         send));
+  }
+
+  // ----- earlier tasks in this session, folded away -----
+  function earlierSection() {
+    const tasks = state.earlier || [];
+    if (!tasks.length) return null;
+    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    return h('section', { 'aria-label': 'Earlier tasks' },
+      h('h2', {}, 'Earlier'),
+      h('ul', { class: 'earlier' }, tasks.map(t => {
+        const open = ui.openTask === t.id;
+        const meta = [t.done.length && `${t.done.length} done`, t.dropped.length && `${t.dropped.length} not done`,
+          t.decisions.length && plural(t.decisions.length, 'decision'), ago(t.endedAt) + (ago(t.endedAt) === 'just now' ? '' : ' ago')].filter(Boolean).join(' · ');
+        return h('li', {},
+          h('button', { class: 'task-toggle', 'aria-expanded': String(open), onclick: () => { ui.openTask = open ? null : t.id; paint(); } },
+            ICON.chevron(), h('span', { class: 't-title' }, t.title || 'Untitled task'), h('span', { class: 't-meta' }, meta)),
+          open && h('div', { class: 'task-body' },
+            (t.done.length || t.dropped.length) ? h('ul', {},
+              t.done.map(d => h('li', { class: 't-step' }, ICON.check(), d.text)),
+              t.dropped.map(text => h('li', { class: 't-step dropped' }, h('span', { class: 't-mark' }, '–'), text, h('span', { class: 'sr' }, ' (not done)')))) : null,
+            t.decisions.length ? h('ul', {}, t.decisions.map(d => {
+              const level = { high: 3, medium: 2, low: 1 }[d.confidence] || 2;
+              return h('li', { class: 't-decision' },
+                h('span', { class: `meter c${level}`, role: 'img', 'aria-label': `${d.confidence} confidence` }, h('i'), h('i'), h('i')),
+                h('div', {}, h('div', { class: 'd-text' }, d.text), d.override ? h('div', { class: 'd-reason' }, `You: ${d.override.text}`) : d.reason && h('div', { class: 'd-reason' }, d.reason)));
+            })) : null));
+      })));
   }
 
   function footer() {

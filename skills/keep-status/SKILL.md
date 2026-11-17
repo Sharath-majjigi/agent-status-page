@@ -9,7 +9,7 @@ The user watches a small page instead of interrupting you. It shows three things
 
 ## When to update it
 
-1. **At the start** of a task with three or more steps, call `update_plan` with a short title and the steps still to do.
+1. **At the start** of a task with three or more steps, call `update_plan` with a short title and the steps still to do. For a new task later in the same session, use a new title; the page moves the earlier task into a folded **Earlier** list.
 2. **At each step**, call `set_now` with one plain line ("Adding the retry wrapper to the HTTP client") and the main file.
 3. **When you choose something** a reasonable person might choose differently (a library, an approach, a trade-off, an assumption about what the user wants), call `record_decision` with a one-line reason.
    - `high`: obvious or forced by the codebase.

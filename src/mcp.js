@@ -17,7 +17,7 @@ The user can edit the steps or override a decision on the page. Those edits reac
 const TOOLS = [
   {
     name: 'update_plan',
-    description: 'Set the task title and the full ordered list of steps still to do (leave out finished ones). Call at the start of a multi-step task and whenever the plan changes, including after the user edits it.',
+    description: 'Set the task title and the full ordered list of steps still to do (leave out finished ones). Call at the start of a multi-step task and whenever the plan changes, including after the user edits it. When you move on to a different task, give it a new title: the page files the previous task under Earlier.',
     inputSchema: {
       type: 'object',
       properties: {

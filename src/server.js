@@ -52,6 +52,7 @@ function blank(id) {
     pending: { plan: null, overrides: [] },
     edits: { state: 'none', at: 0 },
     shared: false,
+    earlier: [],
   };
 }
 function get(id) {
@@ -60,6 +61,7 @@ function get(id) {
   if (!sessions.has(id)) sessions.set(id, blank(id));
   const s = sessions.get(id);
   s.done = s.done || [];
+  s.earlier = s.earlier || [];
   return s;
 }
 function latest() {
@@ -131,7 +133,9 @@ function describePlanChange(before, after) {
 // ---------- agent side (MCP server + hooks) ----------
 function agentUpdatePlan(s, { title, next }) {
   if (s.pending.plan) return { accepted: false, message: takeEdits(s) };
-  if (typeof title === 'string' && title.trim()) s.title = short(title, 120);
+  const newTitle = typeof title === 'string' && title.trim() ? short(title, 120) : '';
+  if (newTitle && isNewTask(s, newTitle, next)) archiveTask(s);
+  if (newTitle) s.title = newTitle;
   if (Array.isArray(next)) {
     markDone(s, next.map(t => short(t)).filter(Boolean));
     const pool = [...s.next];
@@ -149,6 +153,26 @@ function agentUpdatePlan(s, { title, next }) {
   changed(s, { touch: true });
   return { accepted: true };
 }
+// A new title with none of the current steps in it means the agent moved on to another task.
+// (A renamed title over the same steps is the same task. Unsent overrides keep the task open.)
+function isNewTask(s, newTitle, next) {
+  if (!s.title || newTitle === s.title || s.pending.overrides.length) return false;
+  if (!s.done.length && !s.decisions.length && !s.next.length) return false;
+  const texts = new Set((Array.isArray(next) ? next : []).map(t => short(t)));
+  return !s.next.some(n => texts.has(n.text));
+}
+// Move the finished task into Earlier, so the page shows only the current one.
+function archiveTask(s) {
+  s.earlier = s.earlier || [];
+  s.earlier.unshift({
+    id: newId('t'), title: s.title, endedAt: Date.now(),
+    done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions,
+  });
+  if (s.earlier.length > 20) s.earlier.length = 20;
+  s.done = []; s.next = []; s.agentNext = []; s.decisions = [];
+  s.now = { text: '', file: '', at: 0 };
+  s.edits = { state: 'none', at: Date.now() };
+}
 // Steps the agent dropped from the front of its list are finished.
 // (A full rewrite with no overlap is a re-plan, not progress; an empty list means all done.)
 function markDone(s, nextTexts) {
@@ -165,7 +189,8 @@ function agentSetNow(s, { doing, file }) {
 }
 function agentDecision(s, { decision, reason, confidence, supersedes }) {
   const conf = ['high', 'medium', 'low'].includes(confidence) ? confidence : 'medium';
-  const d = { id: 'd' + (s.decisions.length + 1), text: short(decision, 160), reason: short(reason, 240), confidence: conf, at: Date.now(), override: null, supersedes: null };
+  s.dseq = Math.max(s.dseq || 0, s.decisions.length) + 1; // ids stay unique across tasks
+  const d = { id: 'd' + s.dseq, text: short(decision, 160), reason: short(reason, 240), confidence: conf, at: Date.now(), override: null, supersedes: null };
   const old = supersedes && s.decisions.find(x => x.id === supersedes);
   if (old) {
     d.supersedes = old.id;
