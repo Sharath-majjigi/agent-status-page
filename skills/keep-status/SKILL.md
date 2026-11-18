@@ -29,6 +29,6 @@ Their edits reach you between steps as a message starting "Update from the user,
 - An **overridden decision** means do it their way. Undo or adjust work that depended on the old choice, record the new choice with `record_decision` and `supersedes` set to the old id, then call `update_plan`.
 - Say briefly in your next message to the user what you changed because of their edit.
 
-Subagents can't use these tools; keep the page current yourself. The page shows your subagents and any side sessions you start on its own.
+Subagents can't use these tools; keep the page current yourself. The page shows any side sessions you start on its own.
 
 If an `update_plan` call is refused because the user edited first, re-plan from their version and call it again.

@@ -173,14 +173,13 @@ textarea { resize: none; min-height: 72px; line-height: 1.45; display: block; }
 .primary:disabled { opacity: .35; cursor: default; }
 .hint { font-size: 12.5px; color: var(--faint); margin-right: auto; }
 
-/* branches: your follow-ups, the agent's helpers, linked sessions */
+/* branches: your follow-ups and linked sessions */
 .brt { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 6px; border-radius: 7px; color: var(--faint); }
 .brt:hover { background: var(--chip); color: var(--muted); }
 .brt svg { width: 11px; height: 11px; transition: transform .15s; }
 .brt[aria-expanded="true"] svg { transform: rotate(90deg); }
 .brt .shapes { display: inline-flex; gap: 3px; align-items: center; }
 .brt .shapes i { width: 8px; height: 8px; border: 1.5px solid var(--accent); border-radius: 3px; }
-.brt .shapes i.h { border-color: var(--faint); border-radius: 50%; }
 .brt .shapes i.s { border-color: var(--text); border-radius: 50%; }
 .brt .shapes i.w { background: var(--accent); animation: breathe 1.4s ease-in-out infinite; }
 .brt .n { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -200,13 +199,6 @@ textarea { resize: none; min-height: 72px; line-height: 1.45; display: block; }
 .fu .x:hover { color: var(--text); background: var(--hover); }
 .fu .x svg { width: 12px; height: 12px; }
 .fu input.edit { padding: 5px 10px; font-size: 15px; }
-.br.helper::before { border-color: var(--faint); }
-.br.helper .fu-node { border-radius: 50%; border-color: var(--faint); }
-.br.helper.running .fu-node { border-top-color: transparent; animation: spin .9s linear infinite; }
-.br.helper.done .fu-node { background: var(--faint); color: var(--bg); }
-.br.helper .fu-text { color: var(--muted); }
-.br.helper .fu-state { color: var(--muted); }
-.htype { font-size: 12px; color: var(--muted); background: var(--chip); border-radius: 5px; padding: 1px 6px; margin-right: 6px; font-weight: 550; }
 .br.session { cursor: pointer; }
 .br.session::before { border-color: var(--muted); border-left-style: dashed; border-bottom-style: dashed; opacity: .6; }
 .br.session .fu-node { border-radius: 50%; border-color: var(--text); color: var(--text); width: 16px; height: 16px; margin-left: -1px; }
@@ -279,7 +271,7 @@ footer svg { width: 14px; height: 14px; }
   let connected = false;
   // UI state that must survive live updates. `open` is the step whose card is open ('auto' follows the current step).
   const freshUi = () => ({ open: 'auto', editingStep: null, adding: false, dragging: false, overrideOpen: null, overrideDraft: '',
-    fuAdding: null, collapsed: new Set(), showAllDone: false, openTask: null });
+    fuAdding: null, branchOpen: new Map(), showAllDone: false, openTask: null });
   let ui = freshUi();
 
   const app = document.getElementById('app');
@@ -456,11 +448,12 @@ footer svg { width: 14px; height: 14px; }
       current, upcoming, done, working, anchor,
       decisions: by(all, d => at(root(d).stepId)),
       followups: by(state.followups || [], f => at(f.stepId)),
-      helpers: by(state.helpers || [], x => at(x.stepId)),
       children: by(state.children || [], x => at(x.stepId)),
     };
   }
-  const branchCount = (m, id) => (m.followups.get(id) || []).length + (m.helpers.get(id) || []).length + (m.children.get(id) || []).length;
+  const branchCount = (m, id) => (m.followups.get(id) || []).length + (m.children.get(id) || []).length;
+  // Branches stay folded unless a follow-up there is still in progress, or the user opened them.
+  const branchesOpen = (m, id) => ui.branchOpen.has(id) ? ui.branchOpen.get(id) : (m.followups.get(id) || []).some(f => f.state !== 'done');
   const unresolved = all => all.filter(d => d.confidence === 'low' && !d.override && !all.some(r => r.supersedes === d.id));
 
   function tools() {
@@ -474,17 +467,13 @@ footer svg { width: 14px; height: 14px; }
     else if (total) summary = `All ${plural(total, 'step')} done`;
     else summary = state.status === 'working' ? 'Working' : '';
     const review = unresolved(state.decisions || []);
-    const withBr = [...m.done.map(d => d.id), ...(state.next || []).map(n => n.id)].filter(id => branchCount(m, id));
-    const allFolded = withBr.length && withBr.every(id => ui.collapsed.has(id));
     return h('div', { class: 'vtools' },
       h('span', { class: 'summary' }, summary),
       review.length ? h('button', { class: 'pillbtn review', onclick: () => {
         const r = review[0];
         const step = [...m.decisions.entries()].find(([, list]) => list.includes(r));
         if (step) { ui.open = step[0]; ui.showAllDone = true; paint(); app.querySelector('.vrow.open')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-      } }, `${review.length} to review`) : null,
-      withBr.length ? h('button', { class: 'pillbtn', onclick: () => { ui.collapsed = allFolded ? new Set() : new Set(withBr); paint(); } },
-        allFolded ? ICON.down() : ICON.up(), allFolded ? 'Expand all branches' : 'Collapse all branches') : null);
+      } }, `${review.length} to review`) : null);
   }
 
   // ----- the map -----
@@ -511,13 +500,12 @@ footer svg { width: 14px; height: 14px; }
     const open = openId === step.id;
     const decs = m.decisions.get(step.id) || [];
     const n = branchCount(m, step.id);
-    const folded = ui.collapsed.has(step.id) && ui.fuAdding !== step.id;
+    const folded = !branchesOpen(m, step.id) && ui.fuAdding !== step.id;
     const toggleOpen = () => { ui.open = open ? null : step.id; paint(); };
     const live = kind === 'now' && state.status === 'working' && connected;
     const editing = ui.editingStep === step.id;
     let time = h('span', { class: 'vtime' });
     if (kind === 'now' && state.stepStartedAt) time = h('span', { class: 'vtime since' + (state.pause ? ' held' : ''), 'data-at': state.stepStartedAt }, since(state.stepStartedAt));
-    if (kind === 'done' && step.took != null) time = h('span', { class: 'vtime dim' }, dur(step.took));
     const li = h('li', { class: `vrow ${kind}${open ? ' open' : ''}${kind === 'next' ? ' step' : ''}`, 'data-id': step.id },
       h('button', { class: `vdot ${kind}${live ? ' live' : ''}${step.edited ? ' edited' : ''}`, 'aria-expanded': String(open), 'aria-label': `${kind === 'done' ? 'Done' : kind === 'now' ? 'Now' : 'Next'}: ${step.text}`, onclick: toggleOpen },
         kind === 'done' ? ICON.boldCheck() : null),
@@ -537,12 +525,12 @@ footer svg { width: 14px; height: 14px; }
   }
 
   function branchToggle(id, m, folded) {
-    const fus = m.followups.get(id) || [], hs = m.helpers.get(id) || [], cs = m.children.get(id) || [];
-    const n = fus.length + hs.length + cs.length;
+    const fus = m.followups.get(id) || [], cs = m.children.get(id) || [];
+    const n = fus.length + cs.length;
     return h('button', { class: 'brt', 'aria-expanded': String(!folded), title: `${folded ? 'Show' : 'Hide'} ${plural(n, 'branch')}`.replace('branchs', 'branches'),
-      onclick: e => { e.stopPropagation(); folded ? ui.collapsed.delete(id) : ui.collapsed.add(id); paint(); } },
+      onclick: e => { e.stopPropagation(); ui.branchOpen.set(id, folded); paint(); } },
       ICON.chevron(),
-      h('span', { class: 'shapes' }, hs.map(() => h('i', { class: 'h' })), cs.map(() => h('i', { class: 's' })), fus.map(f => h('i', { class: f.state === 'waiting' ? 'w' : '' }))),
+      h('span', { class: 'shapes' }, cs.map(() => h('i', { class: 's' })), fus.map(f => h('i', { class: f.state === 'waiting' ? 'w' : '' }))),
       h('span', { class: 'n' }, String(n)));
   }
 
@@ -560,7 +548,7 @@ footer svg { width: 14px; height: 14px; }
       activity && h('p', { class: 'activity' }, activity),
       decs.length ? decisionList(decs) : null,
       step.id === '_now' ? null : h('div', { class: 'actions' },
-        h('button', { class: 'btn fu-btn', onclick: () => { ui.fuAdding = step.id; ui.collapsed.delete(step.id); paint(); app.querySelector('.fu input')?.focus(); } }, '+ Follow-up'),
+        h('button', { class: 'btn fu-btn', onclick: () => { ui.fuAdding = step.id; ui.branchOpen.set(step.id, true); paint(); app.querySelector('.fu input')?.focus(); } }, '+ Follow-up'),
         kind === 'next' && [
           h('button', { class: 'btn', onclick: () => startEdit(step) }, 'Rename'),
           h('button', { class: 'btn', disabled: idx <= 0, onclick: () => move(step.id, -1) }, 'Move up'),
@@ -572,12 +560,8 @@ footer svg { width: 14px; height: 14px; }
   // ----- branches -----
   const FU_STATE = { waiting: 'Waiting for the agent', received: 'Agent has it', done: 'Done' };
   function branches(step, kind, m) {
-    const hs = m.helpers.get(step.id) || [], cs = m.children.get(step.id) || [], fus = m.followups.get(step.id) || [];
+    const cs = m.children.get(step.id) || [], fus = m.followups.get(step.id) || [];
     return h('ul', { class: 'fus' },
-      hs.map(x => h('li', { class: `fu br helper ${x.state}` },
-        h('span', { class: 'fu-node' }, x.state === 'done' ? ICON.check() : null),
-        h('span', { class: 'fu-text' }, h('span', { class: 'htype' }, x.type), x.text || 'Helper'),
-        h('span', { class: 'fu-state' }, x.state === 'done' ? 'Done' : 'Running'))),
       cs.map(c => {
         const label = c.status === 'starting' ? 'Starting…' : c.status === 'ended' ? `Ended · ${c.done} of ${c.total} done`
           : c.status === 'working' ? (c.total ? `Step ${Math.min(c.done + 1, c.total)} of ${c.total}` : 'Working') : c.total && c.done >= c.total ? `Done · ${c.total} of ${c.total}` : (c.total ? `Idle · ${c.done} of ${c.total} done` : 'Idle');

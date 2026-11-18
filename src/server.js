@@ -53,7 +53,7 @@ function blank(id) {
     now: { text: '', at: 0 },
     decisions: [],
     next: [], agentNext: [], done: [],
-    followups: [], helpers: [], children: [], hostId: '', parent: null, stepStartedAt: 0,
+    followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0,
     pending: { plan: null, overrides: [], followups: [] },
     edits: { state: 'none', at: 0 },
     shared: false,
@@ -73,7 +73,8 @@ function get(id) {
 // Sessions saved by older versions lack the newer fields.
 function migrate(s) {
   s.done = s.done || []; s.earlier = s.earlier || [];
-  s.followups = s.followups || []; s.helpers = s.helpers || []; s.children = s.children || [];
+  s.followups = s.followups || []; s.children = s.children || [];
+  delete s.helpers; // subagents are no longer shown
   s.pending = s.pending || { plan: null, overrides: [] };
   s.pending.followups = s.pending.followups || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
@@ -251,7 +252,6 @@ function archiveTask(s) {
   });
   if (s.earlier.length > 20) s.earlier.length = 20;
   s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
-  s.helpers = s.helpers.filter(h => h.state === 'running');
   s.now = { text: '', at: 0 };
   s.edits = { state: 'none', at: Date.now() };
 }
@@ -291,23 +291,6 @@ function agentFollowupDone(s, id) {
   f.state = 'done'; f.doneAt = Date.now();
   s.pending.followups = s.pending.followups.filter(x => x !== f.id);
   changed(s, { touch: true });
-}
-// Helpers are the main agent's subagents. The Agent tool call names them; SubagentStart/Stop give their id and end.
-function hookHelper(s, b) {
-  const type = short(b.type, 40) || 'agent';
-  if (b.action === 'start') {
-    s.helpers.push({ id: newId('h'), toolUseId: String(b.toolUseId || ''), agentId: '', type, text: short(b.text, 120), state: 'running', stepId: currentStepId(s), at: Date.now() });
-  } else if (b.action === 'bind') {
-    if (s.helpers.some(h => h.agentId === b.agentId)) return;
-    const h = [...s.helpers].reverse().find(x => !x.agentId && x.state === 'running' && (x.type === type || type === 'agent'));
-    if (h) h.agentId = String(b.agentId);
-    else s.helpers.push({ id: newId('h'), toolUseId: '', agentId: String(b.agentId), type, text: '', state: 'running', stepId: currentStepId(s), at: Date.now() });
-  } else if (b.action === 'stop') {
-    const h = s.helpers.find(x => x.agentId === b.agentId) || s.helpers.find(x => b.toolUseId && x.toolUseId === b.toolUseId);
-    if (h) { h.state = 'done'; h.doneAt = Date.now(); }
-  }
-  if (s.helpers.length > 40) s.helpers = s.helpers.slice(-40);
-  changed(s);
 }
 // The parent started a side session (desktop) or launched claude from its shell (seen by the child).
 function linkChild(parent, link) {
@@ -409,7 +392,6 @@ setInterval(() => {
     try { process.kill(s.pid, 0); } catch (e) {
       if (e.code === 'ESRCH') {
         s.status = 'ended';
-        for (const h of s.helpers) if (h.state === 'running') h.state = 'done';
         s.pause = null; s.resume = false; gate(s);
         releaseWaiter(s.id); changed(s);
       }
@@ -515,9 +497,6 @@ const server = http.createServer(async (req, res) => {
         changed(s);
         return send(res, 200, { ok: true });
       }
-      case '/api/hook/helper':
-        hookHelper(s, body);
-        return send(res, 200, { ok: true });
       case '/api/hook/started-session': {
         for (const hostId of (Array.isArray(body.hostIds) ? body.hostIds : []).map(String)) {
           linkChild(s, { hostId });

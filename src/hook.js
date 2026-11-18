@@ -82,18 +82,6 @@ async function main() {
       if (message) print({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } });
       return;
     }
-    case 'helper': { // the main agent is starting a subagent
-      if (input.agent_id) return;
-      const t = input.tool_input || {};
-      await request('POST', '/api/hook/helper', { session, action: 'start', toolUseId: input.tool_use_id, type: t.subagent_type || 'general-purpose', text: t.description || '' }, 1500);
-      return;
-    }
-    case 'substart':
-      await request('POST', '/api/hook/helper', { session, action: 'bind', agentId: input.agent_id, type: input.agent_type }, 1500);
-      return;
-    case 'substop':
-      await request('POST', '/api/hook/helper', { session, action: 'stop', agentId: input.agent_id }, 1500);
-      return;
     case 'prompt': {
       await request('POST', '/api/hook/activity', { session, status: 'working' }, 800).catch(() => {});
       const message = await take(session, { prompt: true }); // typing here also lifts a pause

@@ -21,8 +21,8 @@ Give Claude any multi-step task. It shares a link to the page in its first updat
 
 - **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead.
 - **Next up:** rename, reorder (drag or Move up/down), remove, or add steps.
-- **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done.
-- **Helpers and side sessions:** subagents show as gray branches on the step that started them. Side sessions the agent starts show as linked branches with their own progress; click one to open its page.
+- **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done. Branches fold into a small badge once they're done; click it to open them.
+- **Side sessions:** sessions the agent starts show as linked branches with their own progress. Click one to open its page.
 - **Pause and Resume:** Pause stops the agent at its next step (whatever it is running finishes first). While it's paused, your edits wait. Resume wakes it where it left off, edits included. Typing to Claude also resumes it.
 - **Earlier:** finished tasks from the same session, folded away.
 
@@ -30,7 +30,7 @@ Your edits reach the agent between its steps. In an open session, they wake it u
 
 ## How it works
 
-A plugin with three parts: an MCP server with a few small tools the agent uses to update the page, hooks that hand your edits to the agent between steps (and notice its subagents and side sessions), and a tiny local server that streams the page live. No dependencies, no accounts, no network calls.
+A plugin with three parts: an MCP server with a few small tools the agent uses to update the page, hooks that hand your edits to the agent between steps (and notice the side sessions it starts), and a tiny local server that streams the page live. No dependencies, no accounts, no network calls.
 
 ## Privacy
 
