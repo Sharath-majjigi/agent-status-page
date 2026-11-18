@@ -417,6 +417,7 @@ footer svg { width: 14px; height: 14px; }
     return { parent, meta };
   }
 
+  const isPaused = () => !!(state.pause && state.pause.state === 'paused');
   // Pause stops the agent after its current step; Resume wakes it where it left off.
   function pauseButton() {
     if (!connected || state.status === 'ended') return null;
@@ -505,7 +506,7 @@ footer svg { width: 14px; height: 14px; }
     const live = kind === 'now' && state.status === 'working' && connected;
     const editing = ui.editingStep === step.id;
     let time = h('span', { class: 'vtime' });
-    if (kind === 'now' && state.stepStartedAt) time = h('span', { class: 'vtime since' + (state.pause ? ' held' : ''), 'data-at': state.stepStartedAt }, since(state.stepStartedAt));
+    if (kind === 'now' && state.stepStartedAt) time = h('span', { class: 'vtime since' + (isPaused() ? ' held' : ''), 'data-at': state.stepStartedAt }, since(state.stepStartedAt));
     const li = h('li', { class: `vrow ${kind}${open ? ' open' : ''}${kind === 'next' ? ' step' : ''}`, 'data-id': step.id },
       h('button', { class: `vdot ${kind}${live ? ' live' : ''}${step.edited ? ' edited' : ''}`, 'aria-expanded': String(open), 'aria-label': `${kind === 'done' ? 'Done' : kind === 'now' ? 'Now' : 'Next'}: ${step.text}`, onclick: toggleOpen },
         kind === 'done' ? ICON.boldCheck() : null),
@@ -537,7 +538,7 @@ footer svg { width: 14px; height: 14px; }
   function card(step, kind, decs, m) {
     const n = state.now || {};
     let kicker;
-    if (kind === 'now') kicker = h('div', { class: 'kicker now' + (state.pause ? ' held' : '') }, state.pause ? 'Paused' : state.status === 'working' ? 'Now' : 'Idle', state.stepStartedAt && h('span', { class: 't since', 'data-at': state.stepStartedAt }, '· ' + since(state.stepStartedAt)));
+    if (kind === 'now') kicker = h('div', { class: 'kicker now' + (isPaused() ? ' held' : '') }, isPaused() ? 'Paused' : state.pause ? 'Pausing after this step' : state.status === 'working' ? 'Now' : 'Idle', state.stepStartedAt && h('span', { class: 't since', 'data-at': state.stepStartedAt }, '· ' + since(state.stepStartedAt)));
     else if (kind === 'done') kicker = h('div', { class: 'kicker' }, 'Done', h('span', { class: 't' }, step.took != null ? `· took ${dur(step.took)}` : `· ${ago(step.at)}${ago(step.at) === 'just now' ? '' : ' ago'}`));
     else kicker = h('div', { class: 'kicker' }, 'Up next', step.edited && h('span', { class: 't' }, '· edited by you'));
     const activity = kind === 'now' && n.text && !sameStep(n.text, step.text) && step.id !== '_now' ? n.text : null;
