@@ -23,6 +23,7 @@ Give Claude any multi-step task. It shares a link to the page in its first updat
 - **Next up:** rename, reorder (drag or Move up/down), remove, or add steps.
 - **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done.
 - **Helpers and side sessions:** subagents show as gray branches on the step that started them. Side sessions the agent starts show as linked branches with their own progress; click one to open its page.
+- **Pause and Resume:** Pause stops the agent at its next step (whatever it is running finishes first). While it's paused, your edits wait. Resume wakes it where it left off, edits included. Typing to Claude also resumes it.
 - **Earlier:** finished tasks from the same session, folded away.
 
 Your edits reach the agent between its steps. In an open session, they wake it up even after it has stopped.

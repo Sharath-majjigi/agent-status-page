@@ -10,7 +10,9 @@ const { HOME, PORT, HOST, APP, token } = require('./client');
 
 const TOKEN = token();
 const SESSIONS_DIR = path.join(HOME, 'sessions');
+const PAUSED_DIR = path.join(HOME, 'paused');
 fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 });
+fs.mkdirSync(PAUSED_DIR, { recursive: true, mode: 0o700 });
 const PAGE = path.join(__dirname, 'page.html');
 const WEEK = 7 * 24 * 3600 * 1000;
 
@@ -21,6 +23,7 @@ const subscribers = new Map(); // session id or '*' (latest) -> Set<res>
 const waiters = new Map(); // session id -> res (a Stop hook waiting to wake the idle agent)
 let lastRequest = Date.now();
 
+const safeName = id => String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
 let seq = 0;
 const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
 
@@ -41,7 +44,6 @@ function save(s) {
     fs.writeFile(path.join(SESSIONS_DIR, safeName(s.id) + '.json'), JSON.stringify(s), { mode: 0o600 }, () => {});
   }, 250));
 }
-const safeName = id => String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
 
 // ---------- state ----------
 
@@ -56,6 +58,8 @@ function blank(id) {
     edits: { state: 'none', at: 0 },
     shared: false,
     earlier: [],
+    pause: null, // { state: 'asked' | 'told' | 'paused', at, idle } while the user has paused the task
+    resume: false, // tell the agent it was resumed, with the next edits
   };
 }
 function get(id) {
@@ -74,6 +78,9 @@ function migrate(s) {
   s.pending.followups = s.pending.followups || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
   if (s.now) delete s.now.file; // file names are no longer shown
+  if (s.pause === undefined) s.pause = null;
+  s.resume = !!s.resume;
+  gate(s);
 }
 const hasPending = s => !!(s.pending.plan || s.pending.overrides.length || s.pending.followups.length);
 const currentStepId = s => (s.next[0] && s.next[0].id) || (s.done.length ? s.done[s.done.length - 1].id : null);
@@ -84,7 +91,7 @@ function latest() {
 }
 function view(s) {
   if (!s) return null;
-  const { pending, agentNext, pid, ...rest } = s;
+  const { pending, agentNext, pid, resume, ...rest } = s;
   rest.children = s.children.map(c => {
     const x = findChild(c);
     return x ? { ...c, id: x.id, title: x.title, status: x.status, done: x.done.length, total: x.done.length + x.next.length }
@@ -150,6 +157,32 @@ function takeEdits(s) {
   s.edits = { state: 'received', at: Date.now() };
   changed(s);
   return lines.join('\n');
+}
+
+const PAUSE_MESSAGE = 'The user paused this task on the status page. Stop here: make no more tool calls, and end your turn with one short line saying where you paused. You will be resumed later.';
+const RESUME_MESSAGE = 'The user resumed this task on the status page. Carry on from where you paused.';
+
+// What the agent should hear next. While paused, only the pause itself; edits wait for the resume.
+function takeFor(s, { stopping = false, prompt = false } = {}) {
+  if (prompt && (s.pause || s.resume)) { s.pause = null; s.resume = false; gate(s); changed(s); } // typing in Claude Code resumes
+  if (s.pause) {
+    if (stopping) { s.pause.state = 'paused'; changed(s); return null; }
+    if (s.pause.state !== 'asked') return null;
+    s.pause.state = 'told';
+    changed(s);
+    return PAUSE_MESSAGE;
+  }
+  const edits = takeEdits(s);
+  if (!s.resume) return edits;
+  s.resume = false;
+  changed(s);
+  return edits ? `${RESUME_MESSAGE}\n\n${edits}` : RESUME_MESSAGE;
+}
+
+// A file per paused session, so the PreToolUse gate can check it without a network call.
+function gate(s) {
+  const file = path.join(PAUSED_DIR, safeName(s.id));
+  try { s.pause ? fs.writeFileSync(file, '', { mode: 0o600 }) : fs.rmSync(file, { force: true }); } catch {}
 }
 
 function whereFollowup(s, f) {
@@ -336,11 +369,28 @@ function userRemoveFollowup(s, id) {
   changed(s, { touch: true });
 }
 
+function userPause(s) {
+  if (s.pause || s.status === 'ended') return;
+  const idle = s.status !== 'working';
+  s.pause = { state: idle ? 'paused' : 'asked', at: Date.now(), idle };
+  s.resume = false;
+  gate(s);
+  changed(s, { touch: true });
+}
+function userResume(s) {
+  if (!s.pause) return;
+  s.resume = !s.pause.idle; // it stopped because of the pause: tell it to carry on
+  s.pause = null;
+  gate(s);
+  changed(s, { touch: true });
+  wakeIfIdle(s);
+}
+
 // When the agent has stopped, a Stop hook may be waiting on us; hand it the edits so it wakes the agent.
 function wakeIfIdle(s) {
   const w = waiters.get(s.id);
-  if (!w || s.status === 'working') return;
-  const message = takeEdits(s);
+  if (!w || s.status === 'working' || s.pause) return;
+  const message = takeFor(s);
   if (!message) return;
   waiters.delete(s.id);
   s.status = 'working';
@@ -360,6 +410,7 @@ setInterval(() => {
       if (e.code === 'ESRCH') {
         s.status = 'ended';
         for (const h of s.helpers) if (h.state === 'running') h.state = 'done';
+        s.pause = null; s.resume = false; gate(s);
         releaseWaiter(s.id); changed(s);
       }
     }
@@ -429,8 +480,11 @@ const server = http.createServer(async (req, res) => {
       // Long-poll used by the Stop hook: resolves with the user's edits, or null when no longer needed.
       const s = get(url.searchParams.get('s'));
       releaseWaiter(s.id);
-      const message = takeEdits(s);
-      if (message) return send(res, 200, { message });
+      if (s.pause) { if (s.pause.state !== 'paused') { s.pause.state = 'paused'; changed(s); } }
+      else {
+        const message = takeFor(s);
+        if (message) return send(res, 200, { message });
+      }
       waiters.set(s.id, res);
       req.on('close', () => { if (waiters.get(s.id) === res) waiters.delete(s.id); });
       return;
@@ -489,7 +543,13 @@ const server = http.createServer(async (req, res) => {
         changed(s);
         return send(res, 200, { ok: true });
       case '/api/take':
-        return send(res, 200, { message: takeEdits(s) });
+        return send(res, 200, { message: takeFor(s, { stopping: !!body.stopping, prompt: !!body.prompt }) });
+      case '/api/user/pause':
+        userPause(s);
+        return send(res, 200, view(s));
+      case '/api/user/resume':
+        userResume(s);
+        return send(res, 200, view(s));
       case '/api/agent/plan':
         return send(res, 200, agentUpdatePlan(s, body));
       case '/api/agent/now':

@@ -3,7 +3,7 @@
 // hand the user's page edits to the running agent between steps.
 // A hook must never break the user's session: every failure exits 0 quietly.
 'use strict';
-const { request, ensureServer } = require('./client');
+const { request, ensureServer, HOME } = require('./client');
 
 const mode = process.argv[2];
 const OWN_TOOLS = /^mcp__plugin_status-page_status__/;
@@ -39,7 +39,7 @@ function ancestors() {
 const SESSION_IDS = /local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
 const print = obj => process.stdout.write(JSON.stringify(obj));
-const take = session => request('POST', '/api/take', { session }, 1500).then(r => r && r.message);
+const take = (session, extra) => request('POST', '/api/take', { session, ...extra }, 1500).then(r => r && r.message);
 
 async function main() {
   const input = raw ? JSON.parse(raw) : {};
@@ -62,6 +62,12 @@ async function main() {
       }
       return print({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Status page update' } });
 
+    case 'gate': { // while the user has paused the task, refuse every tool (a file check: no network, no delay)
+      const file = require('path').join(HOME, 'paused', String(session).replace(/[^a-zA-Z0-9_-]/g, '_'));
+      if (!require('fs').existsSync(file)) return;
+      return print({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny',
+        permissionDecisionReason: 'The user paused this task on the status page. Make no more tool calls: end your turn now with one short line saying where you paused. You will be resumed.' } });
+    }
     case 'pre': // async: the agent is working
       await request('POST', '/api/hook/activity', { session, status: 'working' }, 800);
       return;
@@ -90,12 +96,12 @@ async function main() {
       return;
     case 'prompt': {
       await request('POST', '/api/hook/activity', { session, status: 'working' }, 800).catch(() => {});
-      const message = await take(session);
+      const message = await take(session, { prompt: true }); // typing here also lifts a pause
       if (message) print({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: message } });
       return;
     }
-    case 'stop': { // about to finish: if the user just edited something, keep going
-      const message = await take(session);
+    case 'stop': { // about to finish: if the user just edited something, keep going (unless they paused)
+      const message = await take(session, { stopping: true });
       if (message) return print({ decision: 'block', reason: message });
       await request('POST', '/api/hook/activity', { session, status: 'idle' }, 800);
       return;

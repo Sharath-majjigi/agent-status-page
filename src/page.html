@@ -52,6 +52,16 @@ main svg { width: 16px; height: 16px; flex: none; }
 .live .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--live); opacity: 0; animation: ring 2.4s ease-out infinite; }
 .live .state { color: var(--text); }
 .sep { color: var(--faint); }
+.paused .dot { background: var(--review-mark); }
+.paused .state { color: var(--text); }
+.pausing .dot { background: var(--review-mark); animation: breathe 1.6s ease-in-out infinite; }
+.pausebtn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; background: var(--chip); color: var(--text); font-size: 13px; font-weight: 550; }
+.pausebtn:hover { background: var(--hover); }
+.pausebtn svg { width: 11px; height: 11px; }
+.pausebtn.resume { background: var(--accent); color: #fff; }
+.pausebtn.resume:hover { background: var(--accent); filter: brightness(1.08); }
+:root[data-theme="dark"] .pausebtn.resume { color: #10131f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pausebtn.resume { color: #10131f; } }
 .parent { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 .parent:hover { color: var(--text); }
 .parent svg { width: 12px; height: 12px; }
@@ -98,6 +108,7 @@ h1 { margin: 12px 0 0; font-size: 30px; line-height: 1.2; font-weight: 640; lett
 .vend { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
 .vtime { color: var(--live); font-size: 13px; font-weight: 600; min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
 .vtime.dim { color: var(--faint); font-weight: 500; }
+.vtime.held, .kicker.now.held { color: var(--review); }
 .icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--faint); touch-action: none; }
 .icon:hover { color: var(--text); background: var(--hover); }
 .handle { cursor: grab; }
@@ -295,6 +306,8 @@ footer svg { width: 14px; height: 14px; }
   const ICON = {
     grip: () => svg(dots),
     x: () => svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
+    pause: () => svg('<path d="M5.5 3.5v9M10.5 3.5v9"/>', 2.6),
+    play: () => svg('<path d="M5 3.2l8 4.8-8 4.8z" fill="currentColor"/>', 1.2),
     plus: () => svg('<path d="M8 3.5v9M3.5 8h9"/>', 2),
     check: () => svg('<path d="M3.5 8.5l3 3 6-7"/>'),
     boldCheck: () => svg('<path d="M3.5 8.5l3 3 6-7"/>', 2.6),
@@ -338,7 +351,7 @@ footer svg { width: 14px; height: 14px; }
   function plan() {
     const next = state.next || [];
     const working = state.status === 'working';
-    const current = working && next.length ? next[0] : null;
+    const current = (working || state.pause) && next.length ? next[0] : null; // a paused step is still the current one
     return { current, upcoming: current ? next.slice(1) : next, done: state.done || [], working };
   }
 
@@ -386,8 +399,9 @@ footer svg { width: 14px; height: 14px; }
   function statusLabel() {
     if (!connected) return 'Reconnecting';
     if (!state) return 'Waiting';
-    if (state.status === 'working') return 'Live';
     if (state.status === 'ended') return 'Session ended';
+    if (state.pause) return state.pause.state === 'paused' ? 'Paused' : 'Pausing after this step…';
+    if (state.status === 'working') return 'Live';
     return 'Idle';
   }
 
@@ -399,14 +413,28 @@ footer svg { width: 14px; height: 14px; }
   }
 
   function header() {
-    const live = connected && state.status === 'working';
+    const pause = connected && state.pause;
+    const live = connected && !pause && state.status === 'working';
     const project = (state.cwd || '').split('/').filter(Boolean).pop();
-    const meta = h('div', { class: 'meta' + (live ? ' live' : '') },
+    const meta = h('div', { class: 'meta' + (live ? ' live' : pause ? (pause.state === 'paused' ? ' paused' : ' pausing') : '') },
       h('span', { class: 'dot' }), h('span', { class: 'state' }, statusLabel()),
-      project && h('span', { class: 'sep' }, '·'), project && h('span', {}, project));
+      project && h('span', { class: 'sep' }, '·'), project && h('span', {}, project),
+      pauseButton());
     const parent = state.parent && h('button', { class: 'parent', onclick: () => goTo(state.parent.id) },
       ICON.back(), `Started from ${state.parent.title || 'another session'}`);
     return { parent, meta };
+  }
+
+  // Pause stops the agent after its current step; Resume wakes it where it left off.
+  function pauseButton() {
+    if (!connected || state.status === 'ended') return null;
+    const act = path => e => { const btn = e.currentTarget; btn.disabled = true; post(path, {}).catch(() => { btn.disabled = false; }); };
+    if (state.pause) {
+      const done = state.pause.state === 'paused';
+      return h('button', { class: 'pausebtn resume', onclick: act('/api/user/resume') }, ICON.play(), done ? 'Resume' : 'Keep going');
+    }
+    if (state.status !== 'working') return null;
+    return h('button', { class: 'pausebtn', title: 'Stop after the current step', onclick: act('/api/user/pause') }, ICON.pause(), 'Pause');
   }
 
   function page() {
@@ -440,6 +468,7 @@ footer svg { width: 14px; height: 14px; }
     const total = m.done.length + (state.next || []).length;
     let summary;
     if (state.status === 'ended') summary = `Session ended · ${m.done.length} of ${total} done`;
+    else if (state.pause && state.pause.state === 'paused') summary = total ? `Paused at step ${Math.min(m.done.length + 1, total)} of ${total}` : 'Paused';
     else if (m.current) summary = `Step ${m.done.length + 1} of ${total}`;
     else if (total && m.upcoming.length) summary = `Waiting for you · ${m.done.length} of ${total} done`;
     else if (total) summary = `All ${plural(total, 'step')} done`;
@@ -487,7 +516,7 @@ footer svg { width: 14px; height: 14px; }
     const live = kind === 'now' && state.status === 'working' && connected;
     const editing = ui.editingStep === step.id;
     let time = h('span', { class: 'vtime' });
-    if (kind === 'now' && state.stepStartedAt) time = h('span', { class: 'vtime since', 'data-at': state.stepStartedAt }, since(state.stepStartedAt));
+    if (kind === 'now' && state.stepStartedAt) time = h('span', { class: 'vtime since' + (state.pause ? ' held' : ''), 'data-at': state.stepStartedAt }, since(state.stepStartedAt));
     if (kind === 'done' && step.took != null) time = h('span', { class: 'vtime dim' }, dur(step.took));
     const li = h('li', { class: `vrow ${kind}${open ? ' open' : ''}${kind === 'next' ? ' step' : ''}`, 'data-id': step.id },
       h('button', { class: `vdot ${kind}${live ? ' live' : ''}${step.edited ? ' edited' : ''}`, 'aria-expanded': String(open), 'aria-label': `${kind === 'done' ? 'Done' : kind === 'now' ? 'Now' : 'Next'}: ${step.text}`, onclick: toggleOpen },
@@ -520,7 +549,7 @@ footer svg { width: 14px; height: 14px; }
   function card(step, kind, decs, m) {
     const n = state.now || {};
     let kicker;
-    if (kind === 'now') kicker = h('div', { class: 'kicker now' }, state.status === 'working' ? 'Now' : 'Paused', state.stepStartedAt && h('span', { class: 't since', 'data-at': state.stepStartedAt }, '· ' + since(state.stepStartedAt)));
+    if (kind === 'now') kicker = h('div', { class: 'kicker now' + (state.pause ? ' held' : '') }, state.pause ? 'Paused' : state.status === 'working' ? 'Now' : 'Idle', state.stepStartedAt && h('span', { class: 't since', 'data-at': state.stepStartedAt }, '· ' + since(state.stepStartedAt)));
     else if (kind === 'done') kicker = h('div', { class: 'kicker' }, 'Done', h('span', { class: 't' }, step.took != null ? `· took ${dur(step.took)}` : `· ${ago(step.at)}${ago(step.at) === 'just now' ? '' : ' ago'}`));
     else kicker = h('div', { class: 'kicker' }, 'Up next', step.edited && h('span', { class: 't' }, '· edited by you'));
     const activity = kind === 'now' && n.text && !sameStep(n.text, step.text) && step.id !== '_now' ? n.text : null;
@@ -787,6 +816,7 @@ footer svg { width: 14px; height: 14px; }
   function footer() {
     const e = state.edits || {};
     if (state.status === 'ended') return h('footer', {}, 'This session has ended. Edits won’t reach it.');
+    if (state.pause) return h('footer', e.state === 'waiting' ? { class: 'waiting' } : {}, e.state === 'waiting' ? 'Paused. Your edit reaches the agent when you resume.' : 'Paused. Edits reach the agent when you resume.');
     if (e.state === 'waiting') return h('footer', { class: 'waiting' }, h('span', { class: 'pulse' }), 'Your edit reaches the agent at its next step.');
     if (e.state === 'received') return h('footer', { class: 'received' }, ICON.check(), 'The agent has your edit.');
     return h('footer', {}, 'Edits reach the agent at its next step.');

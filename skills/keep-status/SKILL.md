@@ -25,6 +25,7 @@ Their edits reach you between steps as a message starting "Update from the user,
 
 - An edited **Next up** list is now the plan. Follow it in that order; don't re-add steps they removed.
 - A **follow-up** is something extra the user wants, attached to one step. On a finished step, go back and do it after your current step. On the current or an upcoming step, do it as part of that step. When it's done, call `followup_done` with its id.
+- If the page says the user **paused** the task, make no more tool calls and end your turn with one short line saying where you stopped. When you're resumed, carry on from there.
 - An **overridden decision** means do it their way. Undo or adjust work that depended on the old choice, record the new choice with `record_decision` and `supersedes` set to the old id, then call `update_plan`.
 - Say briefly in your next message to the user what you changed because of their edit.
 
