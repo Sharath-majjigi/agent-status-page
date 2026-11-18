@@ -62,12 +62,9 @@ async function main() {
       }
       return print({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Status page update' } });
 
-    case 'pre': { // async: note the file being worked in
-      const t = input.tool_input || {};
-      const file = input.agent_id ? '' : t.file_path || t.notebook_path || ''; // a helper's file isn't the main agent's "now"
-      await request('POST', '/api/hook/activity', { session, status: 'working', ...(file ? { file } : {}) }, 800);
+    case 'pre': // async: the agent is working
+      await request('POST', '/api/hook/activity', { session, status: 'working' }, 800);
       return;
-    }
     case 'post': { // between steps: deliver edits
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them

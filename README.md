@@ -19,7 +19,7 @@ Needs Node 18+. Restart Claude Code after installing.
 
 Give Claude any multi-step task. It shares a link to the page in its first update. You can also open the page any time with `/status-page:open`.
 
-- **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing, the file it's in, and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead.
+- **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead.
 - **Next up:** rename, reorder (drag or Move up/down), remove, or add steps.
 - **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done.
 - **Helpers and side sessions:** subagents show as gray branches on the step that started them. Side sessions the agent starts show as linked branches with their own progress; click one to open its page.

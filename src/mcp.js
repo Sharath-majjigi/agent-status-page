@@ -34,7 +34,6 @@ const TOOLS = [
       type: 'object',
       properties: {
         doing: { type: 'string' },
-        file: { type: 'string', description: 'Main file you are working in, if any' },
       },
       required: ['doing'],
     },
@@ -72,7 +71,7 @@ async function run(name, args) {
     const r = await call('POST', '/api/agent/plan', { session, title: args.title, next: args.next });
     if (!r.accepted) return withShare(session, `Not applied: the user changed the plan first.\n\n${r.message}`);
   } else if (name === 'set_now') {
-    await call('POST', '/api/agent/now', { session, doing: args.doing, file: args.file });
+    await call('POST', '/api/agent/now', { session, doing: args.doing });
   } else if (name === 'record_decision') {
     const r = await call('POST', '/api/agent/decision', { session, ...args });
     text = `Recorded as ${r.id}.`;

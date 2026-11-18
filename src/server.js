@@ -48,7 +48,7 @@ const safeName = id => String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
 function blank(id) {
   return {
     id, title: '', cwd: '', pid: 0, status: 'idle', updatedAt: Date.now(), touchedAt: 0,
-    now: { text: '', file: '', at: 0 },
+    now: { text: '', at: 0 },
     decisions: [],
     next: [], agentNext: [], done: [],
     followups: [], helpers: [], children: [], hostId: '', parent: null, stepStartedAt: 0,
@@ -73,6 +73,7 @@ function migrate(s) {
   s.pending = s.pending || { plan: null, overrides: [] };
   s.pending.followups = s.pending.followups || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
+  if (s.now) delete s.now.file; // file names are no longer shown
 }
 const hasPending = s => !!(s.pending.plan || s.pending.overrides.length || s.pending.followups.length);
 const currentStepId = s => (s.next[0] && s.next[0].id) || (s.done.length ? s.done[s.done.length - 1].id : null);
@@ -218,7 +219,7 @@ function archiveTask(s) {
   if (s.earlier.length > 20) s.earlier.length = 20;
   s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
   s.helpers = s.helpers.filter(h => h.state === 'running');
-  s.now = { text: '', file: '', at: 0 };
+  s.now = { text: '', at: 0 };
   s.edits = { state: 'none', at: Date.now() };
 }
 // Steps the agent dropped from the front of its list are finished.
@@ -233,8 +234,8 @@ function markDone(s, nextTexts) {
   }));
   if (s.done.length > 100) s.done = s.done.slice(-100);
 }
-function agentSetNow(s, { doing, file }) {
-  s.now = { text: short(doing, 160), file: file ? rel(s, file) : s.now.file, at: Date.now() };
+function agentSetNow(s, { doing }) {
+  s.now = { text: short(doing, 160), at: Date.now() };
   s.status = 'working';
   changed(s, { touch: true });
 }
@@ -251,12 +252,6 @@ function agentDecision(s, { decision, reason, confidence, supersedes }) {
   changed(s, { touch: true });
   return d.id;
 }
-function rel(s, file) {
-  file = String(file);
-  if (s.cwd && file.startsWith(s.cwd + path.sep)) return file.slice(s.cwd.length + 1);
-  return file.replace(require('os').homedir(), '~');
-}
-
 function agentFollowupDone(s, id) {
   const f = s.followups.find(x => x.id === String(id));
   if (!f) throw Object.assign(new Error(`No follow-up with id ${id}`), { code: 404 });
@@ -487,7 +482,6 @@ const server = http.createServer(async (req, res) => {
         userRemoveFollowup(s, body.id);
         return send(res, 200, view(s));
       case '/api/hook/activity':
-        if (body.file) s.now.file = rel(s, body.file);
         if (body.status) {
           s.status = body.status;
           if (body.status === 'working') releaseWaiter(s.id);
