@@ -13,7 +13,7 @@ A calm live page for long Claude Code tasks: the agent's steps as one map, from 
 claude plugin marketplace add Sharath-majjigi/agent-status-page && claude plugin install status-page@agent-status-page
 ```
 
-Needs Node 18+. Restart Claude Code after installing.
+Needs Node 18+. Then restart Claude Code: plugins load when a session starts, so sessions that were already open won't show up on the page. If a page stays empty, run `/status-page:open` in that session and it will say why.
 
 ## Use
 

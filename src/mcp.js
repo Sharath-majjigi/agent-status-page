@@ -105,7 +105,7 @@ const out = msg => process.stdout.write(JSON.stringify(msg) + '\n');
 const reply = (id, result) => out({ jsonrpc: '2.0', id, result });
 const fail = (id, code, message) => out({ jsonrpc: '2.0', id, error: { code, message } });
 
-ensureServer().catch(() => {});
+ensureServer().then(() => call('POST', '/api/agent/hello', { session: SESSION })).catch(() => {});
 
 readline.createInterface({ input: process.stdin }).on('line', async line => {
   let msg;

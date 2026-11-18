@@ -476,10 +476,15 @@ const server = http.createServer(async (req, res) => {
     // A browser can't add this header to a cross-site form post, so page writes need it.
     if (!(req.headers['content-type'] || '').startsWith('application/json')) return send(res, 415, { error: 'json only' });
     const body = await readBody(req);
+    if (p === '/api/diagnose') { // for /status-page:open: why might this session's page be empty? (never creates a session)
+      const x = sessions.get(pidAlias.get(String(body.session)) || String(body.session));
+      return send(res, 200, { hooks: !!(x && (x.hookAt || x.cwd)), tools: !!(x && x.toolsAt), task: !!(x && (x.title || x.next.length || x.done.length)) });
+    }
     const s = p.startsWith('/api/') ? get(body.session) : null;
 
     switch (p) {
       case '/api/hook/start': {
+        s.hookAt = Date.now();
         s.cwd = String(body.cwd || s.cwd);
         if (body.pid) { s.pid = Number(body.pid); pidAlias.set('pid:' + s.pid, s.id); }
         if (body.hostId) s.hostId = String(body.hostId);
@@ -515,11 +520,15 @@ const server = http.createServer(async (req, res) => {
         userRemoveFollowup(s, body.id);
         return send(res, 200, view(s));
       case '/api/hook/activity':
+        s.hookAt = Date.now();
         if (body.status) {
           s.status = body.status;
           if (body.status === 'working') releaseWaiter(s.id);
         }
         changed(s);
+        return send(res, 200, { ok: true });
+      case '/api/agent/hello': // the MCP server started for this session, so the agent has the tools
+        s.toolsAt = Date.now(); save(s);
         return send(res, 200, { ok: true });
       case '/api/take':
         return send(res, 200, { message: takeFor(s, { stopping: !!body.stopping, prompt: !!body.prompt }) });
