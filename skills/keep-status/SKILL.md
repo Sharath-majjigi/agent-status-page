@@ -32,3 +32,17 @@ Their edits reach you between steps as a message starting "Update from the user,
 Subagents can't use these tools; keep the page current yourself. The page shows any side sessions you start on its own.
 
 If an `update_plan` call is refused because the user edited first, re-plan from their version and call it again.
+
+## If the status tools aren't there
+
+A session that was already open when the plugin was installed doesn't have these tools. Do the same things through Bash instead, one command per update:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" plan "Short title" "Step you're on" "Next step" ...
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" now "What you're doing"
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" decision "The choice" "Why" high|medium|low [id it replaces]
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" followup-done <id>
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" edits
+```
+
+As with the tools, run `plan` again after each step with only the steps still to do (title `""` keeps it). Each command prints any edits the user made on the page; follow them as above.

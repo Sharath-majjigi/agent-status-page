@@ -4,7 +4,8 @@
 // edits the user made on the page, so they arrive even without hooks.
 'use strict';
 const readline = require('readline');
-const { call, ensureServer, pageUrl } = require('./client');
+const { call, ensureServer } = require('./client');
+const { run: runAction } = require('./actions');
 
 // Claude Code passes its session id to MCP servers; fall back to the parent pid,
 // which the SessionStart hook maps to the same session.
@@ -64,41 +65,6 @@ const TOOLS = [
   },
 ];
 
-async function run(name, args) {
-  const session = SESSION;
-  let text = 'Done.';
-  if (name === 'update_plan') {
-    const r = await call('POST', '/api/agent/plan', { session, title: args.title, next: args.next });
-    if (!r.accepted) return withShare(session, `Not applied: the user changed the plan first.\n\n${r.message}`);
-  } else if (name === 'set_now') {
-    await call('POST', '/api/agent/now', { session, doing: args.doing });
-  } else if (name === 'record_decision') {
-    const r = await call('POST', '/api/agent/decision', { session, ...args });
-    text = `Recorded as ${r.id}.`;
-  } else if (name === 'followup_done') {
-    await call('POST', '/api/agent/followup_done', { session, id: args.id });
-  } else if (name === 'get_user_edits') {
-    const r = await call('POST', '/api/take', { session });
-    return r.message || 'No new edits from the user.';
-  } else {
-    throw new Error(`Unknown tool ${name}`);
-  }
-  const r = await call('POST', '/api/take', { session });
-  if (r.message) text += `\n\n${r.message}`;
-  return withShare(session, text);
-}
-
-// The first time the page has something on it, give the agent the link to pass on.
-async function withShare(session, text) {
-  try {
-    const r = await call('POST', '/api/agent/shared', { session });
-    if (r.first) {
-      const id = session.startsWith('pid:') ? '' : session;
-      text += `\n\nLive status page for this task: ${pageUrl(id)}\nShare this link with the user once, in your next message to them.`;
-    }
-  } catch {}
-  return text;
-}
 
 // ---------- JSON-RPC over stdio ----------
 const out = msg => process.stdout.write(JSON.stringify(msg) + '\n');
@@ -127,7 +93,7 @@ readline.createInterface({ input: process.stdin }).on('line', async line => {
         return reply(id, { tools: TOOLS });
       case 'tools/call': {
         try {
-          const text = await run(params.name, params.arguments || {});
+          const text = await runAction(SESSION, params.name, params.arguments || {});
           return reply(id, { content: [{ type: 'text', text }] });
         } catch (e) {
           return reply(id, { content: [{ type: 'text', text: `Status page unavailable: ${e.message}. Carry on with the task.` }], isError: true });

@@ -484,7 +484,7 @@ const server = http.createServer(async (req, res) => {
 
     switch (p) {
       case '/api/hook/start': {
-        s.hookAt = Date.now();
+        if (!body.cli) s.hookAt = Date.now(); // the Bash fallback registers too, but isn't a hook
         s.cwd = String(body.cwd || s.cwd);
         if (body.pid) { s.pid = Number(body.pid); pidAlias.set('pid:' + s.pid, s.id); }
         if (body.hostId) s.hostId = String(body.hostId);

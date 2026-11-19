@@ -13,7 +13,7 @@ A calm live page for long Claude Code tasks: the agent's steps as one map, from 
 claude plugin marketplace add Sharath-majjigi/agent-status-page && claude plugin install status-page@agent-status-page
 ```
 
-Needs Node 18+. Then restart Claude Code: plugins load when a session starts, so sessions that were already open won't show up on the page. If a page stays empty, run `/status-page:open` in that session and it will say why.
+Needs Node 18+. Sessions you start after installing get everything. In a session that was already open, run `/status-page:open`: Claude keeps the page current through a small command instead of its usual tools, and your edits reach it. Run `/reload-plugins` there too to also get edits between steps and Pause.
 
 ## Use
 
