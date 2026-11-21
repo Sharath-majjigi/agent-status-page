@@ -424,6 +424,9 @@ function linkChild(parent, link) {
 
 // Claude ended its turn with a question (the desktop app's next-step box). The page shows it with the same buttons.
 function hookQuestion(s, input) {
+  // Wrapping up checks off the whole task list in the app, without another task-list update: do the same here.
+  if (Array.isArray(s.tasks) && s.tasks.some(t => t.status !== 'completed'))
+    hookTasks(s, { items: s.tasks.map(t => ({ content: t.text, status: 'completed' })) });
   const ask = short(input && input.ask, 300);
   if (!ask) { if (s.question && s.question.state !== 'sent') { s.question = null; changed(s); } return; } // the turn ended with nothing to ask
   const options = (Array.isArray(input.actions) ? input.actions : []).filter(a => a && !a.action && a.label).map(a => short(a.label, 40)).slice(0, 3);
