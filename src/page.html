@@ -236,6 +236,8 @@ h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
 .ask .note q { color: var(--text); quotes: "“" "”"; }
 .ask .note svg { width: 14px; height: 14px; color: var(--live); }
 .ask.received { box-shadow: var(--shadow); }
+.ask-note { margin: -4px 0 12px; font-size: 14px; color: var(--review); display: flex; gap: 7px; align-items: baseline; }
+.ask-note::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--review-mark); transform: translateY(-1px); }
 .ask.received .ask-k { color: var(--muted); }
 .ask.received .ask-k::before { background: var(--live); }
 
@@ -863,7 +865,12 @@ footer svg { width: 14px; height: 14px; }
         qn.options.map((o, i) => h('button', { class: i ? 'btn' : 'primary', onclick: () => answer(o) }, o)),
         h('button', { class: 'link quiet', onclick: () => { ui.replying = true; paint(); } }, 'Reply…'));
     }
-    return h('section', { class: 'ask', 'aria-label': 'Claude asks' }, h('div', { class: 'ask-k' }, 'Claude asks'), h('p', { class: 'ask-q' }, qn.text), row);
+    // Claude Code only takes approvals for actions like these from the chat, so say so instead of offering a button that does nothing.
+    const approval = /\b(push|deploy|publish|release|merge|delete|remove|force|send|email|post|pay|purchase|drop)\b/i.test(qn.text);
+    const note = qn.unheard ? `Claude couldn’t act on “${qn.unheard}” from here. Approvals like this have to be typed in the chat.`
+      : approval ? 'To approve this, reply in the chat. Answers here can’t approve actions like this.' : null;
+    return h('section', { class: 'ask', 'aria-label': 'Claude asks' }, h('div', { class: 'ask-k' }, 'Claude asks'), h('p', { class: 'ask-q' }, qn.text),
+      note && h('p', { class: 'ask-note' }, note), row);
   }
 
   function footer() {

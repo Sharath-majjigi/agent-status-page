@@ -748,7 +748,7 @@ const server = http.createServer(async (req, res) => {
           if (!s.next.length) { s.now = { text: '', at: 0 }; s.stepStartedAt = Date.now(); } // the last task is over: drop its activity, time from this message
         }
         // The turn ended without a new next-step box, so the app still shows the old question: so does the page.
-        if (body.status === 'idle' && s.question && s.question.state === 'received') Object.assign(s.question, { state: 'open', answer: null });
+        if (body.status === 'idle' && s.question && s.question.state === 'received') Object.assign(s.question, { state: 'open', unheard: s.question.answer, answer: null });
         if (body.status) {
           s.status = body.status;
           if (body.status === 'working') releaseWaiter(s.id);
