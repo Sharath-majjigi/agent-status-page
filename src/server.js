@@ -22,6 +22,7 @@ const sessions = new Map();
 const pidAlias = new Map(); // "pid:123" -> session id (fallback when the MCP server lacks the env var)
 const subscribers = new Map(); // session id or '*' (latest) -> Set<res>
 const waiters = new Map(); // session id -> res (a Stop hook waiting to wake the idle agent)
+const permWaiters = new Map(); // permission request id -> { done, suggestions } (a PermissionRequest hook waiting for the page)
 let lastRequest = Date.now();
 
 const safeName = id => String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -34,6 +35,7 @@ for (const f of fs.readdirSync(SESSIONS_DIR)) {
     const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
     if (Date.now() - (s.updatedAt || 0) > KEEP) { fs.unlinkSync(path.join(SESSIONS_DIR, f)); continue; }
     if (s.status === 'working') s.status = 'idle';
+    s.permissions = []; // a permission request only lives as long as its hook is waiting
     migrate(s);
     sessions.set(s.id, s);
   } catch {}
@@ -81,6 +83,7 @@ function migrate(s) {
   s.pending.followups = s.pending.followups || [];
   if (s.pending.answer === undefined) s.pending.answer = null;
   if (s.question === undefined) s.question = null;
+  s.permissions = s.permissions || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
   if (s.now) delete s.now.file; // file names are no longer shown
   if (s.pause === undefined) s.pause = null;
@@ -185,7 +188,7 @@ const RESUME_MESSAGE = 'The user resumed this task on the status page. Carry on 
 // What the agent should hear next. While paused, only the pause itself; edits wait for the resume.
 // The page is only as current as the agent's task list. If the step in progress hasn't moved for a while
 // although the agent keeps working, remind it once to update the list.
-const NUDGE_AFTER = 3 * 60 * 1000, NUDGE_TOOLS = 8;
+const NUDGE_AFTER = 90 * 1000, NUDGE_TOOLS = 6;
 function staleNudge(s) {
   if (s.status !== 'working' || s.next.length < 2 || !s.planAt || s.pause) return null;
   const now = Date.now();
@@ -427,6 +430,45 @@ function hookQuestion(s, input) {
   s.question = { id: newId('q'), text: ask, options, at: Date.now(), state: 'open', answer: null };
   s.pending.answer = null;
   changed(s, { touch: true });
+}
+
+// ---------- permission prompts, answered on the page ----------
+// Claude Code is about to ask the user to allow a tool call. If the page is open, ask there instead;
+// the click goes back as Claude Code's own permission decision. Nobody looking: Claude Code asks as usual.
+const PERM_WAIT = 10 * 60 * 1000;
+const viewers = s => (subscribers.get(s.id)?.size || 0) + (latest() === s ? (subscribers.get('*')?.size || 0) : 0);
+function describeTool(name, input) {
+  const base = p => String(p || '').split('/').filter(Boolean).pop() || '';
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  if (name === 'Bash') return { title: input.description ? short(input.description, 140) : 'Run a command', detail: String(input.command || '').slice(0, 2000) };
+  if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(name)) return { title: `${name === 'Write' ? 'Write' : 'Edit'} ${base(input.file_path || input.notebook_path)}`, detail: String(input.file_path || input.notebook_path || '') };
+  if (name === 'WebFetch') return { title: 'Open a web page', detail: String(input.url || '') };
+  if (name === 'WebSearch') return { title: 'Search the web', detail: String(input.query || '') };
+  if (mcp) return { title: `Use ${mcp[2].replace(/[_-]+/g, ' ')}`, detail: mcp[1].replace(/^plugin_/, '').replace(/[_-]+/g, ' ') };
+  return { title: `Use ${name}`, detail: short(JSON.stringify(input), 400) };
+}
+function hookPermission(s, body, res) {
+  if (!viewers(s)) return send(res, 200, { decision: null });
+  const suggestions = Array.isArray(body.suggestions) ? body.suggestions : [];
+  const p = { id: newId('p'), tool: short(body.tool, 120), ...describeTool(String(body.tool || ''), body.input || {}), always: suggestions.length > 0, at: Date.now() };
+  s.permissions.push(p);
+  changed(s, { touch: true });
+  const done = decision => {
+    if (!permWaiters.has(p.id)) return;
+    clearTimeout(permWaiters.get(p.id).timer);
+    permWaiters.delete(p.id);
+    s.permissions = s.permissions.filter(x => x.id !== p.id);
+    changed(s);
+    if (!res.writableEnded) send(res, 200, { decision });
+  };
+  permWaiters.set(p.id, { done, suggestions, timer: setTimeout(() => done(null), PERM_WAIT) }); // then Claude Code asks as usual
+  res.on('close', () => done(null)); // the hook went away (turn interrupted, timed out)
+}
+function userPermission(s, id, behavior, always) {
+  const w = permWaiters.get(id);
+  if (!w || !s.permissions.some(p => p.id === id)) throw Object.assign(new Error('That request is no longer waiting'), { code: 409 });
+  if (behavior === 'allow') w.done({ behavior: 'allow', ...(always && w.suggestions.length ? { updatedPermissions: w.suggestions } : {}) });
+  else w.done({ behavior: 'deny', message: 'The user denied this on the status page.' });
 }
 
 // ---------- user side (the page) ----------
@@ -674,6 +716,11 @@ const server = http.createServer(async (req, res) => {
       case '/api/agent/followup_done':
         agentFollowupDone(s, body.id);
         return send(res, 200, { ok: true });
+      case '/api/hook/permission':
+        return hookPermission(s, body, res);
+      case '/api/user/permission':
+        userPermission(s, String(body.id || ''), body.behavior === 'allow' ? 'allow' : 'deny', !!body.always);
+        return send(res, 200, view(s));
       case '/api/hook/question':
         hookQuestion(s, body.input);
         return send(res, 200, { ok: true });
@@ -689,13 +736,16 @@ const server = http.createServer(async (req, res) => {
       case '/api/hook/activity':
         s.hookAt = Date.now();
         const said = typeof body.prompt === 'string' ? userWords(body.prompt) : '';
+        // Automated turns (background-task notices, other sessions' messages) aren't the user talking.
+        const fromUser = said && !/^(\[SYSTEM NOTIFICATION|<(task-notification|side-sessions-event|cross-session-message|ci-monitor-event)\b)/i.test(said);
         if (body.tool) s.toolCalls = (s.toolCalls || 0) + 1;
-        if (said && s.question) { s.question = null; s.pending.answer = null; } // answered (or moved on) in the chat
-        if (said && !said.startsWith('/')) {
+        if (fromUser && s.question) { s.question = null; s.pending.answer = null; } // answered (or moved on) in the chat
+        if (fromUser && !said.startsWith('/')) {
           s.lastPrompt = short(said, 200); s.promptTitle = titleFrom(said); s.promptAt = Date.now(); // shown while the agent hasn't said what it's doing
           if (!s.next.length) { s.now = { text: '', at: 0 }; s.stepStartedAt = Date.now(); } // the last task is over: drop its activity, time from this message
         }
-        if (body.status === 'idle' && s.question && s.question.state === 'received') s.question = null; // answered and acted on
+        // The turn ended without a new next-step box, so the app still shows the old question: so does the page.
+        if (body.status === 'idle' && s.question && s.question.state === 'received') Object.assign(s.question, { state: 'open', answer: null });
         if (body.status) {
           s.status = body.status;
           if (body.status === 'working') releaseWaiter(s.id);

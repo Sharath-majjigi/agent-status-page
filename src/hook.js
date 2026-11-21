@@ -92,6 +92,14 @@ async function main() {
       if (message) print({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: message } });
       return;
     }
+    case 'permission': { // Claude Code is about to ask permission: if the page is open, the user can answer there
+      if (unattended()) return;
+      const r = await request('POST', '/api/hook/permission', {
+        session, tool: input.tool_name, input: input.tool_input || {}, suggestions: input.permission_suggestions || [],
+      }, 11 * 60 * 1000).catch(() => null);
+      if (r && r.decision) print({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: r.decision } });
+      return; // no decision: Claude Code shows its own prompt
+    }
     case 'stop': { // about to finish: if the user just edited something, keep going (unless they paused)
       const message = await take(session, { stopping: true });
       if (message) return print({ decision: 'block', reason: message });

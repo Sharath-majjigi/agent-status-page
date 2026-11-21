@@ -190,17 +190,20 @@ textarea { resize: none; min-height: 72px; line-height: 1.45; display: block; }
 .brt .n { font-size: 12px; font-weight: 600; color: var(--muted); }
 .brt[aria-expanded="true"] .shapes, .brt[aria-expanded="true"] .n { display: none; }
 .fus { list-style: none; margin: 0 0 10px; padding: 0 0 0 18px; display: grid; gap: 2px; }
-.fu { position: relative; display: flex; align-items: center; gap: 10px; min-height: 32px; font-size: 15px; }
+.fu { position: relative; display: flex; align-items: flex-start; gap: 10px; min-height: 32px; padding: 5px 0; font-size: 15px; line-height: 1.45; }
 .fu::before { content: ""; position: absolute; left: -49px; top: -8px; width: 44px; height: 24px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); border-bottom-left-radius: 12px; opacity: .55; }
-.fu-node { width: 14px; height: 14px; flex: none; border-radius: 5px; border: 2px solid var(--accent); background: var(--bg); display: grid; place-items: center; position: relative; z-index: 1; }
+.fu-node { width: 14px; height: 14px; margin-top: 4px; flex: none; border-radius: 5px; border: 2px solid var(--accent); background: var(--bg); display: grid; place-items: center; position: relative; z-index: 1; }
 .fu-node svg { width: 8px !important; height: 8px !important; }
 .fu.received .fu-node { background: linear-gradient(to top, var(--accent) 50%, var(--bg) 50%); }
 .fu.done .fu-node { background: var(--accent); color: var(--bg); }
 .fu-text { min-width: 0; overflow-wrap: anywhere; }
+.fu-text.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.more-link { color: var(--accent); font-size: 13.5px; margin-left: 2px; }
+.more-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .fu.done .fu-text { color: var(--muted); }
-.fu-state { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); white-space: nowrap; }
+.fu-state { margin-left: auto; margin-top: 2px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); white-space: nowrap; }
 .fu.done .fu-state { color: var(--faint); }
-.fu .x { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--faint); }
+.fu .x { width: 22px; height: 22px; margin-top: 1px; display: grid; place-items: center; border-radius: 6px; color: var(--faint); }
 .fu .x:hover { color: var(--text); background: var(--hover); }
 .fu .x svg { width: 12px; height: 12px; }
 .fu input.edit { padding: 5px 10px; font-size: 15px; }
@@ -236,6 +239,14 @@ h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
 .ask.received .ask-k { color: var(--muted); }
 .ask.received .ask-k::before { background: var(--live); }
 
+/* ---------- a permission prompt ---------- */
+.ask.perm { box-shadow: var(--shadow), inset 0 0 0 1px var(--review-soft); }
+.ask.perm .ask-k { color: var(--review); }
+.ask.perm .ask-k::before { background: var(--review-mark); }
+.cmd { margin: -4px 0 12px; padding: 9px 11px; border-radius: 9px; background: var(--chip); font: 13.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.cmd.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.cmd-more { display: block; margin: -8px 0 12px; }
+
 footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; min-height: 40px; }
 footer.waiting { color: var(--text); }
 footer.waiting .pulse { color: var(--accent); }
@@ -251,7 +262,7 @@ footer svg { width: 14px; height: 14px; }
   .vcard { padding: 14px 15px; }
   .fu { display: grid; grid-template-columns: 14px 1fr auto; column-gap: 10px; align-items: start; padding: 4px 0; }
   .fu-node { margin-top: 4px; }
-  .fu-text { grid-column: 2; }
+  .fu-wrap { grid-column: 2; }
   .fu-state { grid-column: 2; margin-left: 0; }
   .fu .x { grid-column: 3; grid-row: 1; }
   .fu::before { top: -6px; height: 21px; }
@@ -276,7 +287,7 @@ footer svg { width: 14px; height: 14px; }
   let connected = false;
   // UI state that must survive live updates. `open` is the step whose card is open ('auto' follows the current step).
   const freshUi = () => ({ open: 'auto', editingStep: null, adding: false, dragging: false, overrideOpen: null, overrideDraft: '',
-    fuAdding: null, branchOpen: new Map(), showAllDone: false, openTask: null, replying: false, replyDraft: '' });
+    fuAdding: null, branchOpen: new Map(), showAllDone: false, openTask: null, replying: false, replyDraft: '', expanded: new Set() });
   let ui = freshUi();
 
   const app = document.getElementById('app');
@@ -409,7 +420,8 @@ footer svg { width: 14px; height: 14px; }
     return [h('div', { class: 'waiting-page' },
       h('div', { class: 'meta' }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…'), h('span', { class: 'metaend' }, historyLink(), themeButton())),
       h('h1', {}, 'Waiting for Claude'),
-      h('p', {}, 'Start a multi-step task in Claude Code. This page fills in as it works.'))];
+      h('p', {}, 'Start a multi-step task in Claude Code. This page fills in as it works.'),
+      state && permissionCards(), state && questionCard())];
   }
 
   function header() {
@@ -452,7 +464,7 @@ footer svg { width: 14px; height: 14px; }
 
   function page() {
     const { parent, meta } = header();
-    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), questionCard(), tools(), mapSection(), otherDecisions(), footer()];
+    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), permissionCards(), questionCard(), tools(), mapSection(), otherDecisions(), footer()];
   }
 
   // ----- where things attach -----
@@ -579,6 +591,15 @@ footer svg { width: 14px; height: 14px; }
         ]));
   }
 
+  // Long text wraps to two lines, with Show more / Show less.
+  function longText(id, text) {
+    const long = text.length > 120;
+    const open = ui.expanded.has(id);
+    return h('span', { class: 'fu-wrap', style: 'min-width:0' },
+      h('span', { class: 'fu-text' + (long && !open ? ' clamp' : '') }, text),
+      long && h('button', { class: 'more-link', onclick: e => { e.stopPropagation(); open ? ui.expanded.delete(id) : ui.expanded.add(id); paint(); } }, open ? 'Show less' : 'Show more'));
+  }
+
   // ----- branches -----
   const FU_STATE = { waiting: 'Waiting for the agent', received: 'Agent has it', done: 'Done' };
   function branches(step, kind, m) {
@@ -597,7 +618,7 @@ footer svg { width: 14px; height: 14px; }
       }),
       fus.map(f => h('li', { class: `fu ${f.state}` },
         h('span', { class: 'fu-node' }, f.state === 'done' ? ICON.check() : null),
-        h('span', { class: 'fu-text' }, f.text),
+        longText(f.id, f.text),
         h('span', { class: 'fu-state' }, f.state === 'waiting' && h('span', { class: 'pulse' }), FU_STATE[f.state] || ''),
         f.state === 'waiting' && state.status !== 'ended' ? h('button', { class: 'x', 'aria-label': 'Remove follow-up', title: 'Remove', onclick: () => post('/api/user/followup/remove', { id: f.id }).catch(() => {}) }, ICON.x()) : null)),
       ui.fuAdding === step.id && h('li', { class: 'fu adding' }, h('span', { class: 'fu-node' }), followupInput(step, kind)));
@@ -791,6 +812,29 @@ footer svg { width: 14px; height: 14px; }
         h('span', { class: 'hint' }, navigator.platform.includes('Mac') ? '⌘↵ to send' : 'Ctrl+Enter to send'),
         h('button', { class: 'link quiet', type: 'button', onclick: closeOverride }, 'Cancel'),
         send));
+  }
+
+  // ----- Claude Code is asking permission for a tool call; the answer goes straight back to it -----
+  function permissionCards() {
+    const list = state.permissions || [];
+    if (!list.length || state.status === 'ended') return null;
+    return list.map(p => {
+      const decide = (behavior, always) => e => {
+        for (const b of e.currentTarget.parentNode.querySelectorAll('button')) b.disabled = true;
+        post('/api/user/permission', { id: p.id, behavior, always }).catch(() => paint());
+      };
+      const long = (p.detail || '').length > 220 || (p.detail || '').split('\n').length > 4;
+      const open = ui.expanded.has(p.id);
+      return h('section', { class: 'ask perm', 'aria-label': 'Permission request' },
+        h('div', { class: 'ask-k' }, 'Claude wants to'),
+        h('p', { class: 'ask-q' }, p.title),
+        p.detail && h('div', { class: 'cmd' + (long && !open ? ' clamp' : '') }, p.detail),
+        long && h('button', { class: 'more-link cmd-more', onclick: () => { open ? ui.expanded.delete(p.id) : ui.expanded.add(p.id); paint(); } }, open ? 'Show less' : 'Show more'),
+        h('div', { class: 'ask-row' },
+          h('button', { class: 'primary', onclick: decide('allow', false) }, 'Allow'),
+          h('button', { class: 'btn', onclick: decide('deny', false) }, 'Deny'),
+          p.always && h('button', { class: 'link quiet', onclick: decide('allow', true), title: 'Allow this and don’t ask again' }, 'Always allow')));
+    });
   }
 
   // ----- a question Claude ended its turn with; answer it here instead of the chat -----
