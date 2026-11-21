@@ -218,6 +218,24 @@ textarea { resize: none; min-height: 72px; line-height: 1.45; display: block; }
 section { margin-top: 48px; }
 h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 
+/* ---------- Claude's question ---------- */
+.ask { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: var(--card); box-shadow: var(--shadow), inset 0 0 0 1px var(--accent-soft); animation: askIn .35s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes askIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.ask-k { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.ask-k::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: breathe 1.8s ease-in-out infinite; }
+.ask-q { margin: 6px 0 12px; font-size: 18px; line-height: 1.4; font-weight: 560; text-wrap: pretty; }
+.ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ask-row .link { margin-left: 4px; }
+.ask form { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+.ask form input { flex: 1; min-width: 0; }
+.ask.sent .ask-k::before { animation: none; }
+.ask .note { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--muted); }
+.ask .note q { color: var(--text); quotes: "“" "”"; }
+.ask .note svg { width: 14px; height: 14px; color: var(--live); }
+.ask.received { box-shadow: var(--shadow); }
+.ask.received .ask-k { color: var(--muted); }
+.ask.received .ask-k::before { background: var(--live); }
+
 footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; min-height: 40px; }
 footer.waiting { color: var(--text); }
 footer.waiting .pulse { color: var(--accent); }
@@ -258,7 +276,7 @@ footer svg { width: 14px; height: 14px; }
   let connected = false;
   // UI state that must survive live updates. `open` is the step whose card is open ('auto' follows the current step).
   const freshUi = () => ({ open: 'auto', editingStep: null, adding: false, dragging: false, overrideOpen: null, overrideDraft: '',
-    fuAdding: null, branchOpen: new Map(), showAllDone: false, openTask: null });
+    fuAdding: null, branchOpen: new Map(), showAllDone: false, openTask: null, replying: false, replyDraft: '' });
   let ui = freshUi();
 
   const app = document.getElementById('app');
@@ -366,7 +384,7 @@ footer svg { width: 14px; height: 14px; }
   const goTo = id => { if (id) location.hash = id; };
 
   // ---------- render ----------
-  const busy = () => ui.overrideOpen || ui.editingStep || ui.adding || ui.dragging || ui.fuAdding;
+  const busy = () => ui.overrideOpen || ui.editingStep || ui.adding || ui.dragging || ui.fuAdding || ui.replying;
   // Live updates call render(); the user's own actions call paint().
   function render() {
     if (busy()) { const meta = app.querySelector('.meta'); if (meta && state) meta.replaceWith(header().meta); return; }
@@ -434,7 +452,7 @@ footer svg { width: 14px; height: 14px; }
 
   function page() {
     const { parent, meta } = header();
-    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), tools(), mapSection(), otherDecisions(), footer()];
+    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), questionCard(), tools(), mapSection(), otherDecisions(), footer()];
   }
 
   // ----- where things attach -----
@@ -773,6 +791,35 @@ footer svg { width: 14px; height: 14px; }
         h('span', { class: 'hint' }, navigator.platform.includes('Mac') ? '⌘↵ to send' : 'Ctrl+Enter to send'),
         h('button', { class: 'link quiet', type: 'button', onclick: closeOverride }, 'Cancel'),
         send));
+  }
+
+  // ----- a question Claude ended its turn with; answer it here instead of the chat -----
+  function questionCard() {
+    const qn = state.question;
+    if (!qn || state.status === 'ended') return null;
+    const answer = text => { ui.replying = false; ui.replyDraft = ''; post('/api/user/answer', { id: qn.id, text }).catch(() => paint()); };
+    if (qn.state !== 'open') {
+      const got = qn.state === 'received';
+      return h('section', { class: 'ask ' + (got ? 'received' : 'sent'), 'aria-label': 'Your answer' },
+        h('div', { class: 'ask-k' }, got ? 'Claude has your answer' : 'Sent'),
+        h('p', { class: 'ask-q' }, qn.text),
+        h('div', { class: 'note' }, got ? ICON.check() : h('span', { class: 'pulse' }), 'You said ', h('q', {}, qn.answer)));
+    }
+    let row;
+    if (ui.replying || !qn.options.length) {
+      const input = h('input', { class: 'edit', placeholder: 'Your answer', 'aria-label': 'Your answer', value: ui.replyDraft,
+        oninput: e => { ui.replyDraft = e.target.value; send.disabled = !e.target.value.trim(); },
+        onkeydown: e => { if (e.key === 'Escape' && qn.options.length) { ui.replying = false; paint(); } } });
+      const send = h('button', { class: 'primary', type: 'submit', disabled: !ui.replyDraft.trim() }, 'Send');
+      row = h('form', { onsubmit: e => { e.preventDefault(); if (ui.replyDraft.trim()) answer(ui.replyDraft.trim()); } }, input, send,
+        qn.options.length ? h('button', { class: 'link quiet', type: 'button', onclick: () => { ui.replying = false; paint(); } }, 'Cancel') : null);
+      if (ui.replying) requestAnimationFrame(() => app.querySelector('.ask input')?.focus());
+    } else {
+      row = h('div', { class: 'ask-row' },
+        qn.options.map((o, i) => h('button', { class: i ? 'btn' : 'primary', onclick: () => answer(o) }, o)),
+        h('button', { class: 'link quiet', onclick: () => { ui.replying = true; paint(); } }, 'Reply…'));
+    }
+    return h('section', { class: 'ask', 'aria-label': 'Claude asks' }, h('div', { class: 'ask-k' }, 'Claude asks'), h('p', { class: 'ask-q' }, qn.text), row);
   }
 
   function footer() {

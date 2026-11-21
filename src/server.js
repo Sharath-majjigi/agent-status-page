@@ -55,7 +55,8 @@ function blank(id) {
     decisions: [],
     next: [], agentNext: [], done: [],
     followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0, taskStartedAt: 0,
-    pending: { plan: null, overrides: [], followups: [] },
+    pending: { plan: null, overrides: [], followups: [], answer: null },
+    question: null, // { id, text, options, at, state: 'open' | 'sent' | 'received', answer } when Claude asked the user something
     edits: { state: 'none', at: 0 },
     shared: false,
     earlier: [],
@@ -78,13 +79,15 @@ function migrate(s) {
   delete s.helpers; // subagents are no longer shown
   s.pending = s.pending || { plan: null, overrides: [] };
   s.pending.followups = s.pending.followups || [];
+  if (s.pending.answer === undefined) s.pending.answer = null;
+  if (s.question === undefined) s.question = null;
   for (const d of s.done) if (!d.id) d.id = newId('n');
   if (s.now) delete s.now.file; // file names are no longer shown
   if (s.pause === undefined) s.pause = null;
   s.resume = !!s.resume;
   gate(s);
 }
-const hasPending = s => !!(s.pending.plan || s.pending.overrides.length || s.pending.followups.length);
+const hasPending = s => !!(s.pending.plan || s.pending.overrides.length || s.pending.followups.length || s.pending.answer);
 const currentStepId = s => (s.next[0] && s.next[0].id) || (s.done.length ? s.done[s.done.length - 1].id : null);
 function latest() {
   let best = null;
@@ -136,8 +139,22 @@ function takeEdits(s) {
   const plan = s.pending.plan;
   const overrides = s.pending.overrides.map(id => s.decisions.find(d => d.id === id)).filter(Boolean);
   const followups = s.pending.followups.map(id => s.followups.find(f => f.id === id)).filter(Boolean);
-  if (!plan && !overrides.length && !followups.length) return null;
-  const lines = ['Update from the user, made on the status page while you were working:', ''];
+  const answer = s.pending.answer && s.question ? s.pending.answer : null;
+  if (!plan && !overrides.length && !followups.length && !answer) return null;
+  const lines = [];
+  if (answer) {
+    lines.push('The user answered your question on the status page.', '', `You asked: ${q(s.question.text)}`, `They answered: ${q(answer)}`, '',
+      'This is the user\'s reply, given on the page instead of the chat. Carry on accordingly.');
+    s.question.state = 'received'; s.question.receivedAt = Date.now();
+  }
+  if (!plan && !overrides.length && !followups.length) {
+    s.pending.answer = null;
+    s.edits = { state: 'received', at: Date.now() };
+    changed(s);
+    return lines.join('\n');
+  }
+  if (answer) lines.push('');
+  lines.push('Update from the user, made on the status page while you were working:', '');
   for (const d of overrides) {
     lines.push(`- The user overrode your decision ${q(d.text)} (id ${d.id}). In their words: ${q(d.override.text)}`);
     d.override.state = 'received';
@@ -156,7 +173,7 @@ function takeEdits(s) {
   lines.push('', 'Follow the user\'s version from here and re-plan if needed. Then call update_plan so the page matches'
     + (overrides.length ? ', and record_decision with `supersedes` set to the overridden id' : '')
     + (followups.length ? '. When you finish a follow-up, call followup_done with its id.' : '.'));
-  s.pending = { plan: null, overrides: [], followups: [] };
+  s.pending = { plan: null, overrides: [], followups: [], answer: null };
   s.edits = { state: 'received', at: Date.now() };
   changed(s);
   return lines.join('\n');
@@ -166,7 +183,22 @@ const PAUSE_MESSAGE = 'The user paused this task on the status page. Stop here: 
 const RESUME_MESSAGE = 'The user resumed this task on the status page. Carry on from where you paused.';
 
 // What the agent should hear next. While paused, only the pause itself; edits wait for the resume.
-function takeFor(s, { stopping = false, prompt = false } = {}) {
+// The page is only as current as the agent's task list. If the step in progress hasn't moved for a while
+// although the agent keeps working, remind it once to update the list.
+const NUDGE_AFTER = 3 * 60 * 1000, NUDGE_TOOLS = 8;
+function staleNudge(s) {
+  if (s.status !== 'working' || s.next.length < 2 || !s.planAt || s.pause) return null;
+  const now = Date.now();
+  if (now - s.planAt < NUDGE_AFTER || (s.toolCalls || 0) - (s.planToolMark || 0) < NUDGE_TOOLS || now - (s.nudgedAt || 0) < NUDGE_AFTER) return null;
+  s.nudgedAt = now;
+  const mins = Math.round((now - s.planAt) / 60000);
+  return `Status page: your task list has shown ${q(s.next[0].text)} as the step in progress for ${mins} minutes. `
+    + 'If you have finished it (or more), update your task list now so the page shows where you are. If you are still on it, carry on.';
+}
+// Any plan update (the agent's own list or update_plan) resets the reminder.
+function planTouched(s) { s.planAt = Date.now(); s.planToolMark = s.toolCalls || 0; }
+
+function takeFor(s, { stopping = false, prompt = false, between = false } = {}) {
   if (prompt && (s.pause || s.resume)) { s.pause = null; s.resume = false; gate(s); changed(s); } // typing in Claude Code resumes
   if (s.pause) {
     if (stopping) { s.pause.state = 'paused'; changed(s); return null; }
@@ -176,7 +208,7 @@ function takeFor(s, { stopping = false, prompt = false } = {}) {
     return PAUSE_MESSAGE;
   }
   const edits = takeEdits(s);
-  if (!s.resume) return edits;
+  if (!s.resume) return edits || (between ? staleNudge(s) : null);
   s.resume = false;
   changed(s);
   return edits ? `${RESUME_MESSAGE}\n\n${edits}` : RESUME_MESSAGE;
@@ -219,6 +251,7 @@ function agentUpdatePlan(s, { title, next }) {
   if (newTitle && isNewTask(s, newTitle, next)) archiveTask(s);
   if (newTitle) s.title = newTitle;
   beginTask(s);
+  planTouched(s);
   if (Array.isArray(next)) {
     const before = s.next[0] && s.next[0].id;
     markDone(s, next.map(t => short(t)).filter(Boolean));
@@ -247,7 +280,8 @@ function agentUpdatePlan(s, { title, next }) {
 // last message, its own plan wins.
 const TASK_STATES = new Set(['pending', 'in_progress', 'completed']);
 // The user's own words from a prompt: apps add tagged blocks (reminders, events) around them.
-const userWords = t => String(t).replace(/<([a-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/\s+/g, ' ').trim();
+// The user's own words, without the tagged blocks the app adds. Line breaks stay: a title ends at the first one.
+const userWords = t => String(t).replace(/<([a-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/[^\S\n]+/g, ' ').replace(/ *\n[\s]*/g, '\n').trim();
 // A task title from the user's message, if it reads like a request ("Yes, build it" doesn't).
 function titleFrom(prompt) {
   const first = String(prompt || '').split(/(?<=[.?!])\s|\n/)[0].trim();
@@ -286,7 +320,8 @@ function hookTasks(s, input) {
   if (r.full && current.length && !hasPending(s) && (!sameTask(s, texts) || fresh)) archiveTask(s);
   beginTask(s);
   s.tasksAt = Date.now();
-  if (!s.title || !s.done.length && !s.next.length) s.title = titleFrom(s.lastPrompt) || texts[0];
+  planTouched(s);
+  if (!s.title || !s.done.length && !s.next.length) s.title = (s.promptTitle !== undefined ? s.promptTitle : titleFrom(s.lastPrompt)) || texts[0];
   const known = new Map([...s.done, ...s.next].map(x => [x.text, x]));
   const wasFirst = s.next[0] && s.next[0].id;
   s.done = r.list.filter(t => t.status === 'completed').map(t => {
@@ -384,7 +419,27 @@ function linkChild(parent, link) {
   changed(parent);
 }
 
+// Claude ended its turn with a question (the desktop app's next-step box). The page shows it with the same buttons.
+function hookQuestion(s, input) {
+  const ask = short(input && input.ask, 300);
+  if (!ask) { if (s.question && s.question.state !== 'sent') { s.question = null; changed(s); } return; } // the turn ended with nothing to ask
+  const options = (Array.isArray(input.actions) ? input.actions : []).filter(a => a && !a.action && a.label).map(a => short(a.label, 40)).slice(0, 3);
+  s.question = { id: newId('q'), text: ask, options, at: Date.now(), state: 'open', answer: null };
+  s.pending.answer = null;
+  changed(s, { touch: true });
+}
+
 // ---------- user side (the page) ----------
+function userAnswer(s, id, text) {
+  if (!s.question || s.question.id !== id || s.question.state !== 'open') throw Object.assign(new Error('That question is no longer open'), { code: 409 });
+  text = short(text, 500);
+  if (!text) throw Object.assign(new Error('Empty answer'), { code: 400 });
+  s.question.answer = text; s.question.state = 'sent'; s.question.sentAt = Date.now();
+  s.pending.answer = text;
+  s.edits = { state: 'waiting', at: Date.now() };
+  changed(s, { touch: true });
+  wakeIfIdle(s);
+}
 function userEditPlan(s, items) {
   const clean = (Array.isArray(items) ? items : []).slice(0, 100)
     .map(n => ({ id: typeof n.id === 'string' && n.id ? n.id : newId('n'), text: short(n.text) }))
@@ -619,6 +674,12 @@ const server = http.createServer(async (req, res) => {
       case '/api/agent/followup_done':
         agentFollowupDone(s, body.id);
         return send(res, 200, { ok: true });
+      case '/api/hook/question':
+        hookQuestion(s, body.input);
+        return send(res, 200, { ok: true });
+      case '/api/user/answer':
+        userAnswer(s, String(body.id || ''), body.text);
+        return send(res, 200, view(s));
       case '/api/user/followup':
         userFollowup(s, body.stepId, body.text);
         return send(res, 200, view(s));
@@ -628,10 +689,13 @@ const server = http.createServer(async (req, res) => {
       case '/api/hook/activity':
         s.hookAt = Date.now();
         const said = typeof body.prompt === 'string' ? userWords(body.prompt) : '';
+        if (body.tool) s.toolCalls = (s.toolCalls || 0) + 1;
+        if (said && s.question) { s.question = null; s.pending.answer = null; } // answered (or moved on) in the chat
         if (said && !said.startsWith('/')) {
-          s.lastPrompt = short(said, 200); s.promptAt = Date.now(); // shown while the agent hasn't said what it's doing
+          s.lastPrompt = short(said, 200); s.promptTitle = titleFrom(said); s.promptAt = Date.now(); // shown while the agent hasn't said what it's doing
           if (!s.next.length) { s.now = { text: '', at: 0 }; s.stepStartedAt = Date.now(); } // the last task is over: drop its activity, time from this message
         }
+        if (body.status === 'idle' && s.question && s.question.state === 'received') s.question = null; // answered and acted on
         if (body.status) {
           s.status = body.status;
           if (body.status === 'working') releaseWaiter(s.id);
@@ -642,7 +706,7 @@ const server = http.createServer(async (req, res) => {
         s.toolsAt = Date.now(); save(s);
         return send(res, 200, { ok: true });
       case '/api/take':
-        return send(res, 200, { message: takeFor(s, { stopping: !!body.stopping, prompt: !!body.prompt }) });
+        return send(res, 200, { message: takeFor(s, { stopping: !!body.stopping, prompt: !!body.prompt, between: !!body.between }) });
       case '/api/user/pause':
         userPause(s);
         return send(res, 200, view(s));

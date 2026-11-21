@@ -69,18 +69,20 @@ async function main() {
         permissionDecisionReason: 'The user paused this task on the status page. Make no more tool calls: end your turn now with one short line saying where you paused. You will be resumed.' } });
     }
     case 'pre': // async: the agent is working
-      await request('POST', '/api/hook/activity', { session, status: 'working' }, 800);
+      await request('POST', '/api/hook/activity', { session, status: 'working', tool: input.tool_name || '' }, 800);
       return;
     case 'post': { // between steps: deliver edits
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them
       if (/^(TodoWrite|mcp__.+__update_plan)$/.test(input.tool_name || '')) // the agent's own task list: the page follows it
         await request('POST', '/api/hook/tasks', { session, input: input.tool_input || {} }, 1500).catch(() => {});
+      if (/^mcp__ccd_turn__wrap_up$/.test(input.tool_name || '')) // the desktop app's next-step box: show its question on the page
+        await request('POST', '/api/hook/question', { session, input: input.tool_input || {} }, 1500).catch(() => {});
       if (/start_session$/.test(input.tool_name || '')) { // the desktop app started a side session for us
         const hostIds = [...new Set(JSON.stringify(input.tool_response || '').match(SESSION_IDS) || [])];
         if (hostIds.length) await request('POST', '/api/hook/started-session', { session, hostIds }, 1500).catch(() => {});
       }
-      const message = await take(session);
+      const message = await take(session, { between: true });
       if (message) print({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: message } });
       return;
     }
