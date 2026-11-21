@@ -55,7 +55,11 @@ main svg { width: 16px; height: 16px; flex: none; }
 .paused .dot { background: var(--review-mark); }
 .paused .state { color: var(--text); }
 .pausing .dot { background: var(--review-mark); animation: breathe 1.6s ease-in-out infinite; }
-.pausebtn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; background: var(--chip); color: var(--text); font-size: 13px; font-weight: 550; }
+.metaend { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.themebtn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
+.themebtn:hover { background: var(--chip); color: var(--text); }
+.themebtn svg { width: 16px; height: 16px; }
+.pausebtn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; background: var(--chip); color: var(--text); font-size: 13px; font-weight: 550; }
 .pausebtn:hover { background: var(--hover); }
 .pausebtn svg { width: 11px; height: 11px; }
 .pausebtn.resume { background: var(--accent); color: #fff; }
@@ -264,8 +268,10 @@ footer svg { width: 14px; height: 14px; }
 (() => {
   const params = new URLSearchParams(location.search);
   const TOKEN = params.get('t') || '';
+  try { const t = localStorage.getItem('status-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
   const theme = params.get('theme');
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state) render(); }); // keep the toggle's icon right
   let sessionId = location.hash.slice(1);
   let state = null;
   let connected = false;
@@ -298,6 +304,8 @@ footer svg { width: 14px; height: 14px; }
   const ICON = {
     grip: () => svg(dots),
     x: () => svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
+    sun: () => svg('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>'),
+    moon: () => svg('<path d="M13.2 9.6A5.5 5.5 0 0 1 6.4 2.8a5.5 5.5 0 1 0 6.8 6.8z"/>'),
     pause: () => svg('<path d="M5.5 3.5v9M10.5 3.5v9"/>', 2.6),
     play: () => svg('<path d="M5 3.2l8 4.8-8 4.8z" fill="currentColor"/>', 1.2),
     plus: () => svg('<path d="M8 3.5v9M3.5 8h9"/>', 2),
@@ -399,7 +407,7 @@ footer svg { width: 14px; height: 14px; }
 
   function waiting() {
     return [h('div', { class: 'waiting-page' },
-      h('div', { class: 'meta' }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…')),
+      h('div', { class: 'meta' }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…'), h('span', { class: 'metaend' }, themeButton())),
       h('h1', {}, 'Waiting for Claude'),
       h('p', {}, 'Start a multi-step task in Claude Code. This page fills in as it works.'))];
   }
@@ -411,7 +419,7 @@ footer svg { width: 14px; height: 14px; }
     const meta = h('div', { class: 'meta' + (live ? ' live' : pause ? (pause.state === 'paused' ? ' paused' : ' pausing') : '') },
       h('span', { class: 'dot' }), h('span', { class: 'state' }, statusLabel()),
       project && h('span', { class: 'sep' }, '·'), project && h('span', {}, project),
-      pauseButton());
+      h('span', { class: 'metaend' }, pauseButton(), themeButton()));
     const parent = state.parent && h('button', { class: 'parent', onclick: () => goTo(state.parent.id) },
       ICON.back(), `Started from ${state.parent.title || 'another session'}`);
     return { parent, meta };
@@ -419,6 +427,17 @@ footer svg { width: 14px; height: 14px; }
 
   const isPaused = () => !!(state.pause && state.pause.state === 'paused');
   // Pause stops the agent after its current step; Resume wakes it where it left off.
+  // Light or dark, remembered in this browser; until the user picks, it follows the system.
+  function themeButton() {
+    const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    return h('button', { class: 'themebtn', 'aria-label': dark ? 'Switch to light mode' : 'Switch to dark mode', title: dark ? 'Light mode' : 'Dark mode',
+      onclick: () => { setTheme(dark ? 'light' : 'dark'); paint(); } }, dark ? ICON.sun() : ICON.moon());
+  }
+  function setTheme(t) {
+    if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+    try { t ? localStorage.setItem('status-theme', t) : localStorage.removeItem('status-theme'); } catch {}
+  }
+
   function pauseButton() {
     if (!connected || state.status === 'ended') return null;
     const act = path => e => { const btn = e.currentTarget; btn.disabled = true; post(path, {}).catch(() => { btn.disabled = false; }); };
