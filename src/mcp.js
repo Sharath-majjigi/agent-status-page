@@ -12,7 +12,7 @@ const { run: runAction } = require('./actions');
 const SESSION = process.env.CLAUDE_CODE_SESSION_ID || `pid:${process.ppid}`;
 
 const INSTRUCTIONS = `This session has a live status page the user watches and edits instead of asking you for updates.
-For any task with three or more steps: call update_plan first (a short title and the remaining steps), set_now when you start each step, and record_decision for each meaningful choice (with an honest confidence). Keep it brief: one plain line each. Skip it for quick questions.
+For any task with three or more steps: call update_plan first (a short title and the remaining steps), set_now when you start each step, and record_decision for each meaningful choice (with an honest confidence). Keep it brief: one plain line each. Skip it for quick questions. (If you don't call update_plan, the page follows your own task list instead.)
 The user can edit the steps, override a decision, or add a follow-up to a step on the page. Those edits reach you between steps and in tool results. Follow them, and call followup_done when you finish a follow-up.`;
 
 const TOOLS = [

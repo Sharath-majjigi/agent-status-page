@@ -471,6 +471,7 @@ footer svg { width: 14px; height: 14px; }
       children: by(state.children || [], x => at(x.stepId)),
     };
   }
+  const clip = (t, n) => (t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t);
   const branchCount = (m, id) => (m.followups.get(id) || []).length + (m.children.get(id) || []).length;
   // Branches stay folded unless a follow-up there is still in progress, or the user opened them.
   const branchesOpen = (m, id) => ui.branchOpen.has(id) ? ui.branchOpen.get(id) : (m.followups.get(id) || []).some(f => f.state !== 'done');
@@ -510,7 +511,7 @@ footer svg { width: 14px; height: 14px; }
         h('span', { class: 'vtext' }, `${plural(hidden, 'earlier step')} done`)))));
     done.slice(hidden).forEach(d => rows.push(row(d, 'done', m, openId)));
     if (m.current) rows.push(row(m.current, 'now', m, openId));
-    else if (state.status === 'working' && !(state.next || []).length) rows.push(row({ id: '_now', text: state.now?.text || 'Working' }, 'now', m, openId));
+    else if (state.status === 'working' && !(state.next || []).length) rows.push(row({ id: '_now', text: state.now?.text || (state.lastPrompt ? `Working on “${clip(state.lastPrompt, 90)}”` : 'Working') }, 'now', m, openId));
     m.upcoming.forEach(n => rows.push(row(n, 'next', m, openId)));
     rows.push(addRow());
     return h('ol', { class: 'vmap', 'aria-label': 'Steps' }, rows);

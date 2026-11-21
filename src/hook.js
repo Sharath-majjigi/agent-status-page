@@ -74,6 +74,8 @@ async function main() {
     case 'post': { // between steps: deliver edits
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them
+      if (/^(TodoWrite|mcp__.+__update_plan)$/.test(input.tool_name || '')) // the agent's own task list: the page follows it
+        await request('POST', '/api/hook/tasks', { session, input: input.tool_input || {} }, 1500).catch(() => {});
       if (/start_session$/.test(input.tool_name || '')) { // the desktop app started a side session for us
         const hostIds = [...new Set(JSON.stringify(input.tool_response || '').match(SESSION_IDS) || [])];
         if (hostIds.length) await request('POST', '/api/hook/started-session', { session, hostIds }, 1500).catch(() => {});
@@ -83,7 +85,7 @@ async function main() {
       return;
     }
     case 'prompt': {
-      await request('POST', '/api/hook/activity', { session, status: 'working' }, 800).catch(() => {});
+      await request('POST', '/api/hook/activity', { session, status: 'working', prompt: String(input.prompt || '') }, 800).catch(() => {});
       const message = await take(session, { prompt: true }); // typing here also lifts a pause
       if (message) print({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: message } });
       return;

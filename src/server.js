@@ -235,6 +235,65 @@ function agentUpdatePlan(s, { title, next }) {
   changed(s, { touch: true });
   return { accepted: true };
 }
+// ---------- the agent's own task list ----------
+// Agents keep a task list anyway (the desktop app's task list, TodoWrite in the terminal).
+// The hooks pass each update here and the page follows it, so it fills in even when the
+// agent never calls the status tools. If the agent did call update_plan since the user's
+// last message, its own plan wins.
+const TASK_STATES = new Set(['pending', 'in_progress', 'completed']);
+// The user's own words from a prompt: apps add tagged blocks (reminders, events) around them.
+const userWords = t => String(t).replace(/<([a-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/\s+/g, ' ').trim();
+// A task title from the user's message, if it reads like a request ("Yes, build it" doesn't).
+function titleFrom(prompt) {
+  const first = String(prompt || '').split(/(?<=[.?!])\s|\n/)[0].trim();
+  if (first.split(/\s+/).length < 4) return '';
+  const t = first.replace(/[.?!]+$/, '');
+  return (t.length > 70 ? t.slice(0, 69).replace(/\s+\S*$/, '') + '…' : t).replace(/^./, c => c.toUpperCase());
+}
+function readTaskList(input, prev) {
+  const full = Array.isArray(input.todos) ? input.todos : Array.isArray(input.items) ? input.items : null;
+  if (full) {
+    const list = full.map(t => ({ text: short(t && t.content, 200), status: TASK_STATES.has(t && t.status) ? t.status : 'pending' })).filter(t => t.text);
+    return list.length ? { list, full: true } : null;
+  }
+  if (!prev || !prev.length) return null; // a partial update needs the list it updates
+  const list = prev.map(t => ({ ...t }));
+  if (input.advance) {
+    const cur = list.findIndex(t => t.status === 'in_progress');
+    if (cur >= 0) list[cur].status = 'completed';
+    const nxt = list.findIndex(t => t.status === 'pending');
+    if (nxt >= 0) list[nxt].status = 'in_progress';
+  }
+  for (const n of Array.isArray(input.done) ? input.done : []) if (list[n - 1]) list[n - 1].status = 'completed';
+  if (Number.isInteger(input.start) && list[input.start - 1]) list[input.start - 1].status = 'in_progress';
+  return { list, full: false };
+}
+function hookTasks(s, input) {
+  const r = readTaskList(input || {}, s.tasks);
+  if (!r) return;
+  s.tasks = r.list;
+  if (s.ownPlanAt && s.ownPlanAt > (s.promptAt || 0)) return; // the agent keeps the page itself
+  if (s.pending.plan) return; // the user's edit goes first; the agent re-plans from it
+  const texts = r.list.map(t => t.text);
+  const current = [...s.done, ...s.next];
+  if (r.full && current.length && !current.some(x => texts.includes(x.text)) && !hasPending(s)) archiveTask(s); // a different list: a new task
+  if (!s.title || !s.done.length && !s.next.length) s.title = titleFrom(s.lastPrompt) || texts[0];
+  const known = new Map([...s.done, ...s.next].map(x => [x.text, x]));
+  const wasFirst = s.next[0] && s.next[0].id;
+  s.done = r.list.filter(t => t.status === 'completed').map(t => {
+    const o = known.get(t.text);
+    if (o && o.at) return o; // already done
+    return { id: (o && o.id) || newId('n'), text: t.text, at: Date.now(), took: o && o.id === wasFirst && s.stepStartedAt ? Date.now() - s.stepStartedAt : null };
+  });
+  // In progress first, then the rest in order.
+  const open = r.list.filter(t => t.status !== 'completed').sort((a, b) => (b.status === 'in_progress') - (a.status === 'in_progress'));
+  s.next = open.map(t => ({ id: (known.get(t.text) || {}).id || newId('n'), text: t.text }));
+  s.agentNext = s.next.map(n => ({ ...n }));
+  if ((s.next[0] && s.next[0].id) !== wasFirst) s.stepStartedAt = Date.now();
+  if (s.edits.state === 'received') s.edits = { state: 'none', at: Date.now() };
+  changed(s, { touch: true });
+}
+
 // A new title with none of the current steps in it means the agent moved on to another task.
 // (A renamed title over the same steps is the same task. Unsent overrides keep the task open.)
 function isNewTask(s, newTitle, next) {
@@ -521,6 +580,11 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, view(s));
       case '/api/hook/activity':
         s.hookAt = Date.now();
+        const said = typeof body.prompt === 'string' ? userWords(body.prompt) : '';
+        if (said && !said.startsWith('/')) {
+          s.lastPrompt = short(said, 200); s.promptAt = Date.now(); // shown while the agent hasn't said what it's doing
+          if (!s.next.length) s.now = { text: '', at: 0 }; // the last task is over; don't show its old activity
+        }
         if (body.status) {
           s.status = body.status;
           if (body.status === 'working') releaseWaiter(s.id);
@@ -539,7 +603,11 @@ const server = http.createServer(async (req, res) => {
         userResume(s);
         return send(res, 200, view(s));
       case '/api/agent/plan':
+        s.ownPlanAt = Date.now();
         return send(res, 200, agentUpdatePlan(s, body));
+      case '/api/hook/tasks':
+        hookTasks(s, body.input);
+        return send(res, 200, { ok: true });
       case '/api/agent/now':
         agentSetNow(s, body);
         return send(res, 200, { ok: true });

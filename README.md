@@ -17,7 +17,7 @@ Needs Node 18+. Sessions you start after installing get everything. In a session
 
 ## Use
 
-Give Claude any multi-step task. It shares a link to the page in its first update. You can also open the page any time with `/status-page:open`.
+Give Claude any multi-step task and open the page with `/status-page:open`. The map fills in by itself from the task list Claude already keeps (the desktop app's list, or its to-dos in the terminal), so it never goes blank while Claude works. Claude adds its decisions on top.
 
 - **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead.
 - **Next up:** rename, reorder (drag or Move up/down), remove, or add steps.
