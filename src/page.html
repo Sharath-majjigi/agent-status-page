@@ -58,6 +58,7 @@ main svg { width: 16px; height: 16px; flex: none; }
 .metaend { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 .themebtn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
 .themebtn:hover { background: var(--chip); color: var(--text); }
+a.themebtn { text-decoration: none; }
 .themebtn svg { width: 16px; height: 16px; }
 .pausebtn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; background: var(--chip); color: var(--text); font-size: 13px; font-weight: 550; }
 .pausebtn:hover { background: var(--hover); }
@@ -214,24 +215,8 @@ textarea { resize: none; min-height: 72px; line-height: 1.45; display: block; }
 .br.session .fu-state { color: var(--muted); }
 .br.session.working .fu-state { color: var(--live); }
 
-/* ---------- earlier tasks ---------- */
 section { margin-top: 48px; }
 h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.earlier { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.task-toggle { display: grid; grid-template-columns: 14px 1fr auto; align-items: baseline; gap: 10px; width: 100%; min-height: 40px; padding: 8px 0; text-align: left; color: var(--muted); }
-.task-toggle:hover, .task-toggle[aria-expanded="true"] { color: var(--text); }
-.task-toggle svg { width: 12px; height: 12px; align-self: center; transition: transform .15s; }
-.task-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
-.t-title { font-weight: 550; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t-meta { color: var(--faint); font-size: 14px; white-space: nowrap; }
-.task-body { padding: 2px 0 14px 24px; display: grid; gap: 4px; font-size: 15px; }
-.task-body ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.t-step { display: flex; gap: 10px; align-items: baseline; color: var(--muted); }
-.t-step svg { width: 12px; height: 12px; flex: none; color: var(--faint); transform: translateY(1px); }
-.t-step.dropped { color: var(--faint); }
-.t-step.dropped .t-mark { flex: none; width: 12px; text-align: center; }
-.t-decision { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; margin-top: 6px; }
-.t-decision .d-text { font-weight: 500; }
 
 footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; min-height: 40px; }
 footer.waiting { color: var(--text); }
@@ -253,10 +238,6 @@ footer svg { width: 14px; height: 14px; }
   .fu .x { grid-column: 3; grid-row: 1; }
   .fu::before { top: -6px; height: 21px; }
   .br.session .fu-node { margin-top: 3px; }
-  .task-toggle { grid-template-columns: 14px 1fr; row-gap: 2px; }
-  .task-toggle svg { align-self: start; margin-top: 6px; }
-  .t-title { white-space: normal; }
-  .t-meta { grid-column: 2; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -305,6 +286,7 @@ footer svg { width: 14px; height: 14px; }
     grip: () => svg(dots),
     x: () => svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
     sun: () => svg('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>'),
+    clock: () => svg('<circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/>'),
     moon: () => svg('<path d="M13.2 9.6A5.5 5.5 0 0 1 6.4 2.8a5.5 5.5 0 1 0 6.8 6.8z"/>'),
     pause: () => svg('<path d="M5.5 3.5v9M10.5 3.5v9"/>', 2.6),
     play: () => svg('<path d="M5 3.2l8 4.8-8 4.8z" fill="currentColor"/>', 1.2),
@@ -391,7 +373,7 @@ footer svg { width: 14px; height: 14px; }
     paint();
   }
   function paint() {
-    const started = state && (state.title || state.now?.text || state.decisions?.length || state.next?.length || state.done?.length || state.earlier?.length);
+    const started = state && (state.title || state.now?.text || state.decisions?.length || state.next?.length || state.done?.length);
     app.replaceChildren(...(started ? page() : waiting()).filter(Boolean));
     document.title = state && state.title ? `${state.title} · ${statusLabel()}` : 'Status';
   }
@@ -407,7 +389,7 @@ footer svg { width: 14px; height: 14px; }
 
   function waiting() {
     return [h('div', { class: 'waiting-page' },
-      h('div', { class: 'meta' }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…'), h('span', { class: 'metaend' }, themeButton())),
+      h('div', { class: 'meta' }, h('span', { class: 'dot' }), h('span', {}, connected ? 'Connected' : 'Connecting…'), h('span', { class: 'metaend' }, historyLink(), themeButton())),
       h('h1', {}, 'Waiting for Claude'),
       h('p', {}, 'Start a multi-step task in Claude Code. This page fills in as it works.'))];
   }
@@ -419,7 +401,7 @@ footer svg { width: 14px; height: 14px; }
     const meta = h('div', { class: 'meta' + (live ? ' live' : pause ? (pause.state === 'paused' ? ' paused' : ' pausing') : '') },
       h('span', { class: 'dot' }), h('span', { class: 'state' }, statusLabel()),
       project && h('span', { class: 'sep' }, '·'), project && h('span', {}, project),
-      h('span', { class: 'metaend' }, pauseButton(), themeButton()));
+      h('span', { class: 'metaend' }, pauseButton(), historyLink(), themeButton()));
     const parent = state.parent && h('button', { class: 'parent', onclick: () => goTo(state.parent.id) },
       ICON.back(), `Started from ${state.parent.title || 'another session'}`);
     return { parent, meta };
@@ -433,6 +415,7 @@ footer svg { width: 14px; height: 14px; }
     return h('button', { class: 'themebtn', 'aria-label': dark ? 'Switch to light mode' : 'Switch to dark mode', title: dark ? 'Light mode' : 'Dark mode',
       onclick: () => { setTheme(dark ? 'light' : 'dark'); paint(); } }, dark ? ICON.sun() : ICON.moon());
   }
+  const historyLink = () => h('a', { class: 'themebtn', href: `/history?t=${encodeURIComponent(TOKEN)}${sessionId ? '&from=' + encodeURIComponent(sessionId) : ''}`, 'aria-label': 'History', title: 'History' }, ICON.clock());
   function setTheme(t) {
     if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
     try { t ? localStorage.setItem('status-theme', t) : localStorage.removeItem('status-theme'); } catch {}
@@ -451,7 +434,7 @@ footer svg { width: 14px; height: 14px; }
 
   function page() {
     const { parent, meta } = header();
-    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), tools(), mapSection(), otherDecisions(), earlierSection(), footer()];
+    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), tools(), mapSection(), otherDecisions(), footer()];
   }
 
   // ----- where things attach -----
@@ -460,15 +443,16 @@ footer svg { width: 14px; height: 14px; }
     const { current, upcoming, done, working } = plan();
     const ids = new Set([...done.map(d => d.id), ...(state.next || []).map(n => n.id)]);
     const anchor = (current && current.id) || (done.length ? done[done.length - 1].id : ((state.next || [])[0] || {}).id) || null;
-    const at = id => (id && ids.has(id) ? id : anchor);
+    // Items from before this task started (an older task's leftovers) aren't shown at all.
+    const at = (id, when) => (id && ids.has(id) ? id : (state.taskStartedAt && (when || 0) < state.taskStartedAt - 1000 ? null : anchor));
     const all = state.decisions || [];
     const root = d => { let r = d; for (let i = 0; i < 20 && r.supersedes; i++) { const p = all.find(x => x.id === r.supersedes); if (!p) break; r = p; } return r; };
     const by = (list, key) => { const m = new Map(); for (const x of list) { const k = key(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); } return m; };
     return {
       current, upcoming, done, working, anchor,
-      decisions: by(all, d => at(root(d).stepId)),
-      followups: by(state.followups || [], f => at(f.stepId)),
-      children: by(state.children || [], x => at(x.stepId)),
+      decisions: by(all, d => at(root(d).stepId, root(d).at)),
+      followups: by(state.followups || [], f => at(f.stepId, f.at)),
+      children: by(state.children || [], x => at(x.stepId, x.at)),
     };
   }
   const branchCount = (m, id) => (m.followups.get(id) || []).length + (m.children.get(id) || []).length;
@@ -789,32 +773,6 @@ footer svg { width: 14px; height: 14px; }
         h('span', { class: 'hint' }, navigator.platform.includes('Mac') ? '⌘↵ to send' : 'Ctrl+Enter to send'),
         h('button', { class: 'link quiet', type: 'button', onclick: closeOverride }, 'Cancel'),
         send));
-  }
-
-  // ----- earlier tasks in this session, folded away -----
-  function earlierSection() {
-    const tasks = state.earlier || [];
-    if (!tasks.length) return null;
-    return h('section', { 'aria-label': 'Earlier tasks' },
-      h('h2', {}, 'Earlier'),
-      h('ul', { class: 'earlier' }, tasks.map(t => {
-        const open = ui.openTask === t.id;
-        const meta = [t.done.length && `${t.done.length} done`, t.dropped.length && `${t.dropped.length} not done`,
-          t.decisions.length && plural(t.decisions.length, 'decision'), ago(t.endedAt) + (ago(t.endedAt) === 'just now' ? '' : ' ago')].filter(Boolean).join(' · ');
-        return h('li', {},
-          h('button', { class: 'task-toggle', 'aria-expanded': String(open), onclick: () => { ui.openTask = open ? null : t.id; paint(); } },
-            ICON.chevron(), h('span', { class: 't-title' }, t.title || 'Untitled task'), h('span', { class: 't-meta' }, meta)),
-          open && h('div', { class: 'task-body' },
-            (t.done.length || t.dropped.length) ? h('ul', {},
-              t.done.map(d => h('li', { class: 't-step' }, ICON.check(), d.text)),
-              t.dropped.map(text => h('li', { class: 't-step dropped' }, h('span', { class: 't-mark' }, '–'), text, h('span', { class: 'sr' }, ' (not done)')))) : null,
-            t.decisions.length ? h('ul', {}, t.decisions.map(d => {
-              const level = { high: 3, medium: 2, low: 1 }[d.confidence] || 2;
-              return h('li', { class: 't-decision' },
-                h('span', { class: `meter c${level}`, role: 'img', 'aria-label': `${d.confidence} confidence` }, h('i'), h('i'), h('i')),
-                h('div', {}, h('div', { class: 'd-text' }, d.text), d.override ? h('div', { class: 'd-reason' }, `You: ${d.override.text}`) : d.reason && h('div', { class: 'd-reason' }, d.reason)));
-            })) : null));
-      })));
   }
 
   function footer() {

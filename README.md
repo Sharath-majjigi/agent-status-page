@@ -24,7 +24,7 @@ Give Claude any multi-step task and open the page with `/status-page:open`. The 
 - **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done. Branches fold into a small badge once they're done; click it to open them.
 - **Side sessions:** sessions the agent starts show as linked branches with their own progress. Click one to open its page.
 - **Pause and Resume:** Pause stops the agent at its next step (whatever it is running finishes first). While it's paused, your edits wait. Resume wakes it where it left off, edits included. Typing to Claude also resumes it.
-- **Earlier:** finished tasks from the same session, folded away.
+- **History:** the clock button opens every finished task from the last 30 days, across projects. Each one shows its steps, decisions and what you changed, and **Replay** plays the task back step by step. Read-only.
 
 Your edits reach the agent between its steps. In an open session, they wake it up even after it has stopped.
 

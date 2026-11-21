@@ -14,7 +14,8 @@ const PAUSED_DIR = path.join(HOME, 'paused');
 fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 });
 fs.mkdirSync(PAUSED_DIR, { recursive: true, mode: 0o700 });
 const PAGE = path.join(__dirname, 'page.html');
-const WEEK = 7 * 24 * 3600 * 1000;
+const HISTORY_PAGE = path.join(__dirname, 'history.html');
+const KEEP = 30 * 24 * 3600 * 1000; // sessions (and their history) are kept for a month
 
 /** @type {Map<string, any>} */
 const sessions = new Map();
@@ -31,7 +32,7 @@ const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
 for (const f of fs.readdirSync(SESSIONS_DIR)) {
   try {
     const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
-    if (Date.now() - (s.updatedAt || 0) > WEEK) { fs.unlinkSync(path.join(SESSIONS_DIR, f)); continue; }
+    if (Date.now() - (s.updatedAt || 0) > KEEP) { fs.unlinkSync(path.join(SESSIONS_DIR, f)); continue; }
     if (s.status === 'working') s.status = 'idle';
     migrate(s);
     sessions.set(s.id, s);
@@ -53,7 +54,7 @@ function blank(id) {
     now: { text: '', at: 0 },
     decisions: [],
     next: [], agentNext: [], done: [],
-    followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0,
+    followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0, taskStartedAt: 0,
     pending: { plan: null, overrides: [], followups: [] },
     edits: { state: 'none', at: 0 },
     shared: false,
@@ -92,15 +93,16 @@ function latest() {
 }
 function view(s) {
   if (!s) return null;
-  const { pending, agentNext, pid, resume, ...rest } = s;
-  rest.children = s.children.map(c => {
-    const x = findChild(c);
-    return x ? { ...c, id: x.id, title: x.title, status: x.status, done: x.done.length, total: x.done.length + x.next.length }
-      : { ...c, id: null, title: '', status: 'starting', done: 0, total: 0 };
-  });
+  const { pending, agentNext, pid, resume, earlier, tasks, ...rest } = s; // past tasks are on the history page
+  rest.children = s.children.map(c => ({ ...c, ...childInfo(c) }));
   const parent = s.parent && sessions.get(s.parent);
   rest.parent = parent ? { id: parent.id, title: parent.title } : null;
   return rest;
+}
+function childInfo(c) {
+  const x = findChild(c);
+  return x ? { id: x.id, title: x.title, status: x.status, done: x.done.length, total: x.done.length + x.next.length }
+    : { id: null, title: c.title || '', status: c.status === 'ended' ? 'ended' : 'starting', done: c.done || 0, total: c.total || 0 };
 }
 function findChild(c) {
   if (c.sessionId) return sessions.get(c.sessionId) || null;
@@ -216,13 +218,16 @@ function agentUpdatePlan(s, { title, next }) {
   const newTitle = typeof title === 'string' && title.trim() ? short(title, 120) : '';
   if (newTitle && isNewTask(s, newTitle, next)) archiveTask(s);
   if (newTitle) s.title = newTitle;
+  beginTask(s);
   if (Array.isArray(next)) {
     const before = s.next[0] && s.next[0].id;
     markDone(s, next.map(t => short(t)).filter(Boolean));
     const pool = [...s.next];
     s.next = next.map(t => short(t)).filter(Boolean).map(text => {
       const i = pool.findIndex(n => n.text === text);
-      return i >= 0 ? { id: pool.splice(i, 1)[0].id, text } : { id: newId('n'), text };
+      if (i < 0) return { id: newId('n'), text };
+      const o = pool.splice(i, 1)[0];
+      return o.edited ? { id: o.id, text, edited: true } : { id: o.id, text }; // the user's steps stay marked as theirs
     });
     s.agentNext = s.next.map(n => ({ ...n }));
     if (!s.stepStartedAt || (s.next[0] && s.next[0].id) !== before) s.stepStartedAt = Date.now();
@@ -276,18 +281,22 @@ function hookTasks(s, input) {
   if (s.pending.plan) return; // the user's edit goes first; the agent re-plans from it
   const texts = r.list.map(t => t.text);
   const current = [...s.done, ...s.next];
-  if (r.full && current.length && !current.some(x => texts.includes(x.text)) && !hasPending(s)) archiveTask(s); // a different list: a new task
+  // A different list is a new task. So is a fresh list after the user's next message once the last task is finished.
+  const fresh = (s.promptAt || 0) > (s.tasksAt || 0) && !s.next.length && r.list.some(t => t.status !== 'completed');
+  if (r.full && current.length && !hasPending(s) && (!sameTask(s, texts) || fresh)) archiveTask(s);
+  beginTask(s);
+  s.tasksAt = Date.now();
   if (!s.title || !s.done.length && !s.next.length) s.title = titleFrom(s.lastPrompt) || texts[0];
   const known = new Map([...s.done, ...s.next].map(x => [x.text, x]));
   const wasFirst = s.next[0] && s.next[0].id;
   s.done = r.list.filter(t => t.status === 'completed').map(t => {
     const o = known.get(t.text);
     if (o && o.at) return o; // already done
-    return { id: (o && o.id) || newId('n'), text: t.text, at: Date.now(), took: o && o.id === wasFirst && s.stepStartedAt ? Date.now() - s.stepStartedAt : null };
+    return { id: (o && o.id) || newId('n'), text: t.text, at: Date.now(), took: o && o.id === wasFirst && s.stepStartedAt ? Date.now() - s.stepStartedAt : null, ...(o && o.edited ? { edited: true } : {}) };
   });
   // In progress first, then the rest in order.
   const open = r.list.filter(t => t.status !== 'completed').sort((a, b) => (b.status === 'in_progress') - (a.status === 'in_progress'));
-  s.next = open.map(t => ({ id: (known.get(t.text) || {}).id || newId('n'), text: t.text }));
+  s.next = open.map(t => { const o = known.get(t.text) || {}; return { id: o.id || newId('n'), text: t.text, ...(o.edited ? { edited: true } : {}) }; });
   s.agentNext = s.next.map(n => ({ ...n }));
   if ((s.next[0] && s.next[0].id) !== wasFirst) s.stepStartedAt = Date.now();
   if (s.edits.state === 'received') s.edits = { state: 'none', at: Date.now() };
@@ -299,17 +308,32 @@ function hookTasks(s, input) {
 function isNewTask(s, newTitle, next) {
   if (!s.title || newTitle === s.title || hasPending(s)) return false;
   if (!s.done.length && !s.decisions.length && !s.next.length) return false;
-  const texts = new Set((Array.isArray(next) ? next : []).map(t => short(t)));
-  return !s.next.some(n => texts.has(n.text));
+  const texts = (Array.isArray(next) ? next : []).map(t => short(t)).filter(Boolean);
+  return !texts.length || !sameTask(s, texts);
+}
+// A list is the same task when at least half of its steps are already on the map.
+// (One shared step like "Commit" doesn't make two tasks the same.)
+function sameTask(s, texts) {
+  const have = new Set([...s.done, ...s.next].map(x => x.text));
+  return texts.filter(t => have.has(t)).length * 2 >= texts.length;
+}
+// The first plan of a task marks when it started (shown in history).
+function beginTask(s) {
+  if (!s.taskStartedAt || (!s.done.length && !s.next.length && !s.decisions.length)) s.taskStartedAt = Date.now();
 }
 // Move the finished task into Earlier, so the page shows only the current one.
 function archiveTask(s) {
   s.earlier = s.earlier || [];
+  // Side sessions go with their task, unless they're still running.
+  const running = c => { const x = findChild(c); return !x || x.status === 'working'; };
+  const children = s.children.filter(c => !running(c)).map(c => ({ ...c, ...childInfo(c) }));
+  s.children = s.children.filter(running);
   s.earlier.unshift({
-    id: newId('t'), title: s.title, endedAt: Date.now(),
-    done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups,
+    id: newId('t'), title: s.title, startedAt: s.taskStartedAt || null, endedAt: Date.now(),
+    done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups, children,
   });
-  if (s.earlier.length > 20) s.earlier.length = 20;
+  if (s.earlier.length > 40) s.earlier.length = 40;
+  s.taskStartedAt = 0;
   s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
   s.now = { text: '', at: 0 };
   s.edits = { state: 'none', at: Date.now() };
@@ -321,7 +345,7 @@ function markDone(s, nextTexts) {
   const firstKept = s.next.findIndex(n => keep.has(n.text));
   const finished = firstKept === -1 ? (nextTexts.length ? [] : s.next) : s.next.slice(0, firstKept);
   finished.filter(n => !keep.has(n.text)).forEach((n, k) => s.done.push({
-    id: n.id, text: n.text, at: Date.now(),
+    id: n.id, text: n.text, at: Date.now(), ...(n.edited ? { edited: true } : {}),
     took: k === 0 && s.stepStartedAt ? Date.now() - s.stepStartedAt : null, // only the step that was in progress has a real duration
   }));
   if (s.done.length > 100) s.done = s.done.slice(-100);
@@ -461,6 +485,28 @@ setInterval(() => {
   if (!listeners && Date.now() - lastRequest > 24 * 3600 * 1000) process.exit(0);
 }, 15000).unref();
 
+// ---------- history ----------
+// Every finished task from every session, newest first, for the read-only history page.
+function historyList() {
+  const out = [];
+  const first = t => Math.min(...[t.endedAt, ...t.done.map(d => d.at - (d.took || 0)), ...t.decisions.map(d => d.at), ...t.followups.map(f => f.at)].filter(Number.isFinite));
+  const add = (s, t, key) => out.push({
+    key, session: s.id, project: (s.cwd || '').split('/').filter(Boolean).pop() || '',
+    title: t.title || 'Untitled task', startedAt: t.startedAt || first(t), endedAt: t.endedAt,
+    done: t.done, dropped: t.dropped, decisions: t.decisions, followups: t.followups,
+    children: (t.children || []).map(c => ({ ...c, ...childInfo(c) })),
+  });
+  for (const s of sessions.values()) {
+    for (const t of s.earlier || []) add(s, t, t.id);
+    // The task on the map counts once it's over: all steps done, or the session ended.
+    const over = s.done.length && s.status !== 'working' && (!s.next.length || s.status === 'ended');
+    if (over) add(s, { title: s.title, startedAt: s.taskStartedAt, endedAt: Math.max(...s.done.map(d => d.at), ...s.decisions.map(d => d.at)),
+      done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups,
+      children: s.children.filter(c => { const x = findChild(c); return x && x.status !== 'working'; }) }, 'now-' + s.id);
+  }
+  return out.sort((a, b) => b.endedAt - a.endedAt);
+}
+
 // ---------- http ----------
 function okToken(t) {
   if (typeof t !== 'string' || t.length !== TOKEN.length) return false;
@@ -496,13 +542,14 @@ const server = http.createServer(async (req, res) => {
       return send(res, 403, { error: 'bad token' });
     }
 
-    if (req.method === 'GET' && p === '/') {
+    if (req.method === 'GET' && (p === '/' || p === '/history')) {
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer',
         'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       });
-      return fs.createReadStream(PAGE).pipe(res);
+      return fs.createReadStream(p === '/' ? PAGE : HISTORY_PAGE).pipe(res);
     }
+    if (req.method === 'GET' && p === '/api/history') return send(res, 200, { tasks: historyList() });
 
     if (req.method === 'GET' && p === '/api/events') {
       const sid = url.searchParams.get('s') || '*';
