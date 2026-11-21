@@ -245,6 +245,10 @@ h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
 .ask.perm { box-shadow: var(--shadow), inset 0 0 0 1px var(--review-soft); }
 .ask.perm .ask-k { color: var(--review); }
 .ask.perm .ask-k::before { background: var(--review-mark); }
+.ask.chat-only .ask-k { color: var(--review); }
+.ask.chat-only .ask-k::before { background: var(--review-mark); }
+.ask.chat-only .ask-note { margin: 0; color: var(--muted); }
+.ask.chat-only .ask-note::before { display: none; }
 .cmd { margin: -4px 0 12px; padding: 9px 11px; border-radius: 9px; background: var(--chip); font: 13.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
 .cmd.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .cmd-more { display: block; margin: -8px 0 12px; }
@@ -865,12 +869,14 @@ footer svg { width: 14px; height: 14px; }
         qn.options.map((o, i) => h('button', { class: i ? 'btn' : 'primary', onclick: () => answer(o) }, o)),
         h('button', { class: 'link quiet', onclick: () => { ui.replying = true; paint(); } }, 'Reply…'));
     }
-    // Claude Code only takes approvals for actions like these from the chat, so say so instead of offering a button that does nothing.
+    // Claude Code only takes approvals for actions like these from the chat. Buttons that can't approve anything
+    // would be a lie, so these questions show without them and point to the chat.
     const approval = /\b(push|deploy|publish|release|merge|delete|remove|force|send|email|post|pay|purchase|drop)\b/i.test(qn.text);
-    const note = qn.unheard ? `Claude couldn’t act on “${qn.unheard}” from here. Approvals like this have to be typed in the chat.`
-      : approval ? 'To approve this, reply in the chat. Answers here can’t approve actions like this.' : null;
-    return h('section', { class: 'ask', 'aria-label': 'Claude asks' }, h('div', { class: 'ask-k' }, 'Claude asks'), h('p', { class: 'ask-q' }, qn.text),
-      note && h('p', { class: 'ask-note' }, note), row);
+    if (approval || qn.unheard)
+      return h('section', { class: 'ask chat-only', 'aria-label': 'Claude asks' }, h('div', { class: 'ask-k' }, 'Answer in the chat'),
+        h('p', { class: 'ask-q' }, qn.text),
+        h('p', { class: 'ask-note' }, 'Approvals like this only count when you type them in the chat, so the page can’t answer this one.'));
+    return h('section', { class: 'ask', 'aria-label': 'Claude asks' }, h('div', { class: 'ask-k' }, 'Claude asks'), h('p', { class: 'ask-q' }, qn.text), row);
   }
 
   function footer() {
