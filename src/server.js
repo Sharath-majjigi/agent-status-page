@@ -583,7 +583,7 @@ const server = http.createServer(async (req, res) => {
         const said = typeof body.prompt === 'string' ? userWords(body.prompt) : '';
         if (said && !said.startsWith('/')) {
           s.lastPrompt = short(said, 200); s.promptAt = Date.now(); // shown while the agent hasn't said what it's doing
-          if (!s.next.length) s.now = { text: '', at: 0 }; // the last task is over; don't show its old activity
+          if (!s.next.length) { s.now = { text: '', at: 0 }; s.stepStartedAt = Date.now(); } // the last task is over: drop its activity, time from this message
         }
         if (body.status) {
           s.status = body.status;
