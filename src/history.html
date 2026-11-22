@@ -84,17 +84,30 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
 /* ---------- task list ---------- */
 .day { margin-top: 30px; }
 .day h2 { position: sticky; top: 0; z-index: 2; margin: 0; padding: 10px 0 8px; background: var(--bg); font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.task { display: block; width: 100%; text-align: left; background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 18px 16px; animation: rise .5s both; transition: transform .18s, box-shadow .18s; }
-.task:hover { transform: translateY(-1px); box-shadow: 0 1px 2px rgba(20, 20, 15, .05), 0 10px 30px rgba(20, 20, 15, .09); }
+.sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.session { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 4px 0 6px; animation: rise .5s both; }
+.shead { padding: 14px 18px 10px; }
+.sname { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 650; letter-spacing: -0.015em; }
+.sname .live { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--live); }
+.sname .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.smeta { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
+.plink { color: var(--text); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.tasks { list-style: none; margin: 0 8px; padding: 0; position: relative; }
+.tasks::before { content: ""; position: absolute; left: 13px; top: 18px; bottom: 18px; width: 1.5px; background: var(--line); border-radius: 1px; }
+.task { position: relative; display: block; width: 100%; text-align: left; border-radius: 12px; padding: 10px 12px 10px 30px; transition: background .15s; }
+.task::before { content: ""; position: absolute; left: 10px; top: 17px; width: 8px; height: 8px; border-radius: 50%; background: var(--card); box-shadow: inset 0 0 0 1.6px var(--faint); }
+.task:hover { background: var(--chip); }
+.task:hover::before { background: var(--text); box-shadow: none; }
+.more { margin: 2px 0 6px 38px; font-size: 13.5px; color: var(--muted); padding: 4px 0; }
+.more:hover { color: var(--text); }
 .task .top { display: flex; align-items: baseline; gap: 12px; }
-.task .title { flex: 1; min-width: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.task .title { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 560; letter-spacing: -0.01em; }
 .task .when { font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .task .sub { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
 .task .sub .you { color: var(--accent); }
 
 /* the task's shape: every step, decision and nudge along one line */
-.thread { position: relative; height: 22px; margin-top: 12px; }
+.thread { position: relative; height: 18px; margin-top: 6px; }
 .thread .line { position: absolute; left: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: color-mix(in srgb, var(--faint) 45%, transparent); transform-origin: left; animation: draw .7s cubic-bezier(.2, .8, .2, 1) both; }
 .thread .n { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--done); animation: pop .35s both; }
 .thread .n.k-drop { background: var(--card); box-shadow: inset 0 0 0 1.6px var(--faint); }
@@ -186,7 +199,8 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
   h1 { font-size: 28px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .cols { gap: 2px; height: 52px; }
-  .task { padding: 13px 15px 14px; }
+  .shead { padding: 13px 15px 8px; }
+  .tasks { margin: 0 4px; }
   .task .top { flex-direction: column; gap: 0; }
   .player { gap: 10px; }
   .play span { display: none; }
@@ -299,7 +313,7 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
 
   function topBar(backTo) {
     const back = backTo === 'list'
-      ? h('a', { class: 'back', href: '#' }, ICON.back(), 'All tasks')
+      ? h('a', { class: 'back', href: '#' }, ICON.back(), 'History')
       : FROM ? h('a', { class: 'back', href: `/?t=${encodeURIComponent(TOKEN)}#${encodeURIComponent(FROM)}` }, ICON.back(), 'Live page') : null;
     return h('div', { class: 'bar' }, back, h('span', { class: 'end' }, themeButton()));
   }
@@ -319,7 +333,7 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
     const spanDays = Math.max(1, Math.round((Date.now() - Math.min(...shown.map(t => t.startedAt))) / DAY));
 
     const lede = h('p', { class: 'lede' },
-      `Claude finished ${plural(shown.length, 'task')} ${spanDays <= 1 ? 'today' : `in the last ${plural(spanDays, 'day')}`}`,
+      `Claude finished ${plural(shown.length, 'task')} across ${plural(new Set(shown.map(t => t.session)).size, 'session')} ${spanDays <= 1 ? 'today' : `in the last ${plural(spanDays, 'day')}`}`,
       you ? `, and you stepped in ${you === 1 ? 'once' : you + ' times'}.` : '.');
 
     const stats = h('div', { class: 'stats' },
@@ -345,17 +359,19 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
     const chips = projects.length > 1 && h('div', { class: 'chips', role: 'group', 'aria-label': 'Project' },
       ['', ...projects].map(p => h('button', { class: 'chip', 'aria-pressed': String(project === p), onclick: () => { project = p; route(); } }, p || 'All projects')));
 
-    // grouped by day
+    // Session > tasks. Each session sits under the day it was last active.
+    const bySession = new Map();
+    for (const t of shown) { if (!bySession.has(t.session)) bySession.set(t.session, []); bySession.get(t.session).push(t); }
     const groups = [];
-    for (const t of shown) {
-      const k = dayStart(t.endedAt);
-      if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, items: [] });
-      groups[groups.length - 1].items.push(t);
+    for (const items of bySession.values()) {
+      const k = dayStart(items[0].endedAt);
+      if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, sessions: [] });
+      groups[groups.length - 1].sessions.push(items);
     }
     let n = 0;
     const days = groups.map(g => h('section', { class: 'day', id: 'day-' + g.k },
       h('h2', {}, dayLabel(g.k)),
-      h('ul', { class: 'tasks' }, g.items.map(t => h('li', {}, taskCard(t, n++))))));
+      h('ul', { class: 'sessions' }, g.sessions.map(items => h('li', {}, sessionCard(items, n++))))));
 
     requestAnimationFrame(countUp);
     return [topBar(), h('h1', {}, 'History'), lede, stats, ribbon, chips, ...days,
@@ -374,12 +390,35 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
     requestAnimationFrame(tick);
   }
 
-  function taskCard(t, i) {
+  // One session: named after the task it started with, its tasks newest first.
+  const SHOW = 3;
+  const openSessions = new Set();
+  // A session is named after the first task it ran.
+  const sessionName = id => { const own = tasks.filter(t => t.session === id); return own.length ? own[own.length - 1].title : ''; };
+  function sessionCard(items, i) {
+    const first = items[items.length - 1], last = items[0];
+    const start = Math.min(...items.map(t => t.startedAt)), endAt = last.endedAt;
+    const parentName = first.parent && sessionName(first.parent);
+    const when = dayStart(start) === dayStart(endAt) ? `${clockTime(start)} – ${clockTime(endAt)}` : `${dayLabel(start)} – ${clockTime(endAt)}`;
+    const meta = [first.project, when, plural(items.length, 'task')].filter(Boolean).join(' · ');
+    const open = openSessions.has(first.session);
+    const visible = open ? items : items.slice(0, SHOW);
+    const delay = Math.min(i, 10) * 50;
+    return h('article', { class: 'session', id: 's-' + first.session, style: `animation-delay:${delay}ms` },
+      h('header', { class: 'shead' },
+        h('div', { class: 'sname' }, first.title,
+          first.sessionLive ? h('span', { class: 'live', title: 'This session is still open' }, 'Open') : null),
+        h('div', { class: 'smeta' }, meta, parentName ? h('span', {}, ' · side session of ', h('button', { class: 'plink', onclick: () => document.getElementById('s-' + first.parent)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' }) }, parentName)) : null)),
+      h('ol', { class: 'tasks' }, visible.map((t, k) => h('li', {}, taskRow(t, delay + k * 40)))),
+      items.length > SHOW ? h('button', { class: 'more', onclick: () => { open ? openSessions.delete(first.session) : openSessions.add(first.session); route(); } },
+        open ? 'Show fewer' : `Show ${plural(items.length - SHOW, 'earlier task')}`) : null);
+  }
+
+  function taskRow(t, delay) {
     const f = facts(t);
-    const sub = [t.project, dur(t.endedAt - t.startedAt), `${t.done.length} of ${t.done.length + t.dropped.length} steps`,
+    const sub = [dur(t.endedAt - t.startedAt), `${t.done.length} of ${t.done.length + t.dropped.length} steps`,
       t.decisions.length && plural(t.decisions.filter(d => !d.supersedes).length, 'decision')].filter(Boolean).join(' · ');
-    const delay = Math.min(i, 12) * 45;
-    return h('a', { class: 'task', href: '#' + encodeURIComponent(t.key), style: `animation-delay:${delay}ms` },
+    return h('a', { class: 'task', href: '#' + encodeURIComponent(t.key) },
       h('div', { class: 'top' },
         h('span', { class: 'title' }, t.title),
         h('span', { class: 'when' }, clockTime(t.endedAt))),

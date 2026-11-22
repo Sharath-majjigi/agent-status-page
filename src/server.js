@@ -360,6 +360,11 @@ function beginTask(s) {
   if (!s.taskStartedAt || (!s.done.length && !s.next.length && !s.decisions.length)) s.taskStartedAt = Date.now();
 }
 // Move the finished task into Earlier, so the page shows only the current one.
+// When a task's last step, decision or follow-up happened. A task can sit finished for hours before the next one starts.
+function lastActivity(t) {
+  const ts = [...(t.done || []).map(d => d.at), ...(t.decisions || []).map(d => d.at), ...(t.followups || []).map(f => f.doneAt || f.at)].filter(Number.isFinite);
+  return ts.length ? Math.max(...ts) : 0;
+}
 function archiveTask(s) {
   s.earlier = s.earlier || [];
   // Side sessions go with their task, unless they're still running.
@@ -367,7 +372,7 @@ function archiveTask(s) {
   const children = s.children.filter(c => !running(c)).map(c => ({ ...c, ...childInfo(c) }));
   s.children = s.children.filter(running);
   s.earlier.unshift({
-    id: newId('t'), title: s.title, startedAt: s.taskStartedAt || null, endedAt: Date.now(),
+    id: newId('t'), title: s.title, startedAt: s.taskStartedAt || null, endedAt: lastActivity(s) || Date.now(),
     done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups, children,
   });
   if (s.earlier.length > 40) s.earlier.length = 40;
@@ -592,7 +597,9 @@ function historyList() {
   const first = t => Math.min(...[t.endedAt, ...t.done.map(d => d.at - (d.took || 0)), ...t.decisions.map(d => d.at), ...t.followups.map(f => f.at)].filter(Number.isFinite));
   const add = (s, t, key) => out.push({
     key, session: s.id, project: (s.cwd || '').split('/').filter(Boolean).pop() || '',
-    title: t.title || 'Untitled task', startedAt: t.startedAt || first(t), endedAt: t.endedAt,
+    sessionLive: s.status !== 'ended', parent: s.parent || null,
+    // Older tasks may carry a title taken from an automated message; the first step reads better.
+    title: (!t.title || /^\s*(<|\[SYSTEM)/.test(t.title) ? t.done[0]?.text || t.dropped[0] : t.title) || 'Untitled task', startedAt: t.startedAt || first(t), endedAt: Math.min(t.endedAt, lastActivity(t) || t.endedAt),
     done: t.done, dropped: t.dropped, decisions: t.decisions, followups: t.followups,
     children: (t.children || []).map(c => ({ ...c, ...childInfo(c) })),
   });
