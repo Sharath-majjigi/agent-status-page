@@ -7,6 +7,8 @@ const { request, ensureServer, HOME } = require('./client');
 
 const mode = process.argv[2];
 const OWN_TOOLS = /^mcp__plugin_status-page_status__/;
+const PROOF_TOOLS = /Claude_Browser|claude-in-chrome|Claude_Code_iOS_Simulator|playwright|puppeteer/i;
+const bashCommand = input => input.tool_name === 'Bash' ? String((input.tool_input || {}).command || '').slice(0, 500) : '';
 
 let raw = '';
 process.stdin.setEncoding('utf8');
@@ -69,10 +71,12 @@ async function main() {
         permissionDecisionReason: 'The user paused this task on the status page. Make no more tool calls: end your turn now with one short line saying where you paused. You will be resumed.' } });
     }
     case 'pre': // async: the agent is working
-      await request('POST', '/api/hook/activity', { session, status: 'working', tool: input.tool_name || '' }, 800);
+      await request('POST', '/api/hook/activity', { session, status: 'working', tool: input.tool_name || '', command: bashCommand(input) }, 800);
       return;
     case 'post': { // between steps: deliver edits
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
+      if (input.tool_name === 'Bash' || PROOF_TOOLS.test(input.tool_name || '')) // what actually happened: tests, commits, pushes, looking at the result
+        await request('POST', '/api/hook/proof', { session, tool: input.tool_name, command: bashCommand(input) }, 800).catch(() => {});
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them
       if (/^(TodoWrite|mcp__.+__update_plan)$/.test(input.tool_name || '')) // the agent's own task list: the page follows it
         await request('POST', '/api/hook/tasks', { session, input: input.tool_input || {} }, 1500).catch(() => {});

@@ -10,7 +10,7 @@
 :root {
   --bg: #fafaf8; --card: #ffffff; --text: #1c1c1a; --muted: #74746e; --faint: #a6a69f; --line: #e7e7e2;
   --hover: #f1f1ed; --chip: #f2f2ee; --done: #3a3a37;
-  --accent: #3b5bdb; --accent-soft: rgba(59, 91, 219, .10);
+  --accent: #3b5bdb; --accent-soft: rgba(59, 91, 219, .10); --violet: #7048e8; --bad: #d64545;
   --live: #1f9d63; --live-soft: rgba(31, 157, 99, .16);
   --review: #9a5b00; --review-mark: #c27803; --review-soft: #f8edd8;
   --shadow: 0 1px 2px rgba(20, 20, 15, .04), 0 6px 24px rgba(20, 20, 15, .06);
@@ -19,14 +19,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #131312; --card: #1b1b1a; --text: #ecece7; --muted: #9b9b94; --faint: #64645e; --line: #2c2c2a;
-    --hover: #222220; --chip: #232321; --done: #d8d8d2; --accent: #8fa2ff; --accent-soft: rgba(143, 162, 255, .14);
+    --hover: #222220; --chip: #232321; --done: #d8d8d2; --accent: #8fa2ff; --accent-soft: rgba(143, 162, 255, .14); --violet: #b197fc; --bad: #f07575;
     --live: #3ccf8e; --live-soft: rgba(60, 207, 142, .18); --review: #e7b555; --review-mark: #e7b555; --review-soft: rgba(231, 181, 85, .14);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .28);
   }
 }
 :root[data-theme="dark"] {
   --bg: #131312; --card: #1b1b1a; --text: #ecece7; --muted: #9b9b94; --faint: #64645e; --line: #2c2c2a;
-  --hover: #222220; --chip: #232321; --done: #d8d8d2; --accent: #8fa2ff; --accent-soft: rgba(143, 162, 255, .14);
+  --hover: #222220; --chip: #232321; --done: #d8d8d2; --accent: #8fa2ff; --accent-soft: rgba(143, 162, 255, .14); --violet: #b197fc; --bad: #f07575;
   --live: #3ccf8e; --live-soft: rgba(60, 207, 142, .18); --review: #e7b555; --review-mark: #e7b555; --review-soft: rgba(231, 181, 85, .14);
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .28);
 }
@@ -55,25 +55,8 @@ svg { width: 16px; height: 16px; flex: none; }
 .iconbtn:hover { background: var(--chip); color: var(--text); }
 
 h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; letter-spacing: -0.025em; }
-.lede { margin: 0; color: var(--muted); font-size: 17px; max-width: 560px; }
 
-/* ---------- numbers ---------- */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 28px 0 0; }
-.stat { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px 12px; animation: rise .5s both; }
-.stat b { display: block; font-size: 28px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.stat span { font-size: 13px; color: var(--muted); }
-.stat.you b { color: var(--accent); }
 
-/* ---------- the month at a glance ---------- */
-.ribbon { margin-top: 26px; }
-.cols { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; align-items: end; height: 64px; }
-.col { height: 100%; display: flex; align-items: flex-end; border-radius: 3px; position: relative; }
-.col i { display: block; width: 100%; border-radius: 3px; background: var(--done); opacity: .85; transform-origin: bottom; animation: grow .7s cubic-bezier(.2, .8, .2, 1) both; }
-.col.empty i { height: 3px !important; background: var(--line); opacity: 1; }
-.col.today i { background: var(--live); opacity: 1; }
-.col:not(.empty) { cursor: pointer; }
-.col:not(.empty):hover i { opacity: 1; background: var(--accent); }
-.ticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin-top: 6px; }
 
 /* ---------- filter ---------- */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 30px 0 4px; }
@@ -81,9 +64,6 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
 .chip:hover { color: var(--text); }
 .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 
-/* ---------- task list ---------- */
-.day { margin-top: 30px; }
-.day h2 { position: sticky; top: 0; z-index: 2; margin: 0; padding: 10px 0 8px; background: var(--bg); font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .session { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 4px 0 6px; animation: rise .5s both; }
 .shead { padding: 14px 18px 10px; }
@@ -92,30 +72,9 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
 .sname .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
 .smeta { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
 .plink { color: var(--text); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
-.tasks { list-style: none; margin: 0 8px; padding: 0; position: relative; }
-.tasks::before { content: ""; position: absolute; left: 13px; top: 18px; bottom: 18px; width: 1.5px; background: var(--line); border-radius: 1px; }
-.task { position: relative; display: block; width: 100%; text-align: left; border-radius: 12px; padding: 10px 12px 10px 30px; transition: background .15s; }
-.task::before { content: ""; position: absolute; left: 10px; top: 17px; width: 8px; height: 8px; border-radius: 50%; background: var(--card); box-shadow: inset 0 0 0 1.6px var(--faint); }
-.task:hover { background: var(--chip); }
-.task:hover::before { background: var(--text); box-shadow: none; }
 .more { margin: 2px 0 6px 38px; font-size: 13.5px; color: var(--muted); padding: 4px 0; }
 .more:hover { color: var(--text); }
-.task .top { display: flex; align-items: baseline; gap: 12px; }
-.task .title { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 560; letter-spacing: -0.01em; }
-.task .when { font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.task .sub { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
-.task .sub .you { color: var(--accent); }
 
-/* the task's shape: every step, decision and nudge along one line */
-.thread { position: relative; height: 18px; margin-top: 6px; }
-.thread .line { position: absolute; left: 0; top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: color-mix(in srgb, var(--faint) 45%, transparent); transform-origin: left; animation: draw .7s cubic-bezier(.2, .8, .2, 1) both; }
-.thread .n { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--done); animation: pop .35s both; }
-.thread .n.k-drop { background: var(--card); box-shadow: inset 0 0 0 1.6px var(--faint); }
-.thread .n.k-dec { width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 2px; background: var(--card); box-shadow: inset 0 0 0 2px var(--muted); transform: rotate(45deg); animation-name: popDiamond; }
-.thread .n.k-dec.low { box-shadow: inset 0 0 0 2px var(--review-mark); background: var(--review-soft); }
-.thread .n.k-you { width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); animation-name: popDiamond; }
-.thread .n.k-fu { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; background: var(--card); box-shadow: inset 0 0 0 2px var(--accent); }
-.thread .n.k-side { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 3px; background: var(--card); box-shadow: inset 0 0 0 2px var(--muted); }
 @keyframes popDiamond { 0% { opacity: 0; transform: rotate(45deg) scale(.3); } 100% { opacity: 1; transform: rotate(45deg) scale(1); } }
 
 .empty-state { margin-top: 60px; color: var(--muted); }
@@ -124,9 +83,6 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
 /* ---------- one task ---------- */
 .kicker { margin-top: 26px; font-size: 13.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; }
 .kicker .sep { color: var(--faint); }
-.story { margin: 10px 0 0; font-size: 17px; color: var(--muted); max-width: 580px; }
-.story b { color: var(--text); font-weight: 560; }
-.story .you { color: var(--accent); }
 
 .player { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 14px; margin: 26px -12px 0; padding: 10px 12px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 12px; }
 .play { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px 7px 12px; border-radius: 999px; background: var(--text); color: var(--bg); font-size: 14px; font-weight: 600; flex: none; }
@@ -197,17 +153,71 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
 @media (max-width: 560px) {
   main { padding: max(28px, env(safe-area-inset-top)) 16px 56px; }
   h1 { font-size: 28px; }
-  .stats { grid-template-columns: repeat(2, 1fr); }
-  .cols { gap: 2px; height: 52px; }
   .shead { padding: 13px 15px 8px; }
   .tasks { margin: 0 4px; }
-  .task .top { flex-direction: column; gap: 0; }
   .player { gap: 10px; }
   .play span { display: none; }
   .play { padding: 9px; }
   .clock { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------- the list ---------- */
+h2 { font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.calm { display: flex; align-items: center; gap: 8px; margin: 26px 0 0; color: var(--muted); font-size: 15px; }
+.calm svg { color: var(--live); width: 14px; height: 14px; }
+.needs { margin-top: 26px; }
+.needs ul { list-style: none; margin: 10px 0 0; padding: 0; background: var(--card); border-radius: 14px; box-shadow: var(--shadow); }
+.need { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.need:first-child { border-top: 0; }
+.need .nd { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--review-mark); }
+.need.bad .nd { background: var(--bad); } .need.info .nd { background: var(--accent); }
+.need .nt { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: baseline; }
+.need .nt b { font-weight: 560; }
+.need .nt span { color: var(--faint); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.need .nt:hover span { color: var(--muted); }
+.fine { font-size: 13.5px; color: var(--muted); padding: 4px 10px; border-radius: 8px; background: var(--chip); }
+.fine:hover { color: var(--text); }
+.since { margin-top: 34px; }
+.older { margin-top: 22px; font-size: 14px; color: var(--muted); padding: 6px 0; }
+.older:hover { color: var(--text); }
+.sessions { margin-top: 12px; }
+.calm + .sessions, .needs + .sessions { margin-top: 26px; }
+.tasks { list-style: none; margin: 0 6px 2px; padding: 0; }
+.task { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; transition: background .15s; }
+.task:hover { background: var(--hover); }
+.task .title { flex: 1; min-width: 0; font-size: 15.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task .title.plain { color: var(--muted); }
+.task .when { font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 40px; text-align: right; }
+.verb { flex: none; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; color: var(--vc); background: color-mix(in srgb, var(--vc) 13%, transparent); }
+.v-fixed { --vc: var(--violet); } .v-added { --vc: var(--live); } .v-changed { --vc: var(--accent); } .v-removed { --vc: var(--muted); }
+.proofs { display: inline-flex; gap: 4px; flex: none; }
+.proof { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font-size: 12.5px; }
+.proof svg { width: 13px; height: 13px; }
+.proof.ok svg { color: var(--live); } .proof.bad, .proof.bad svg { color: var(--bad); } .proof.warn svg { color: var(--review-mark); }
+.task .proof.ok .pl, .task .proof:not(.bad):not(.warn) .pl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.task .proof.ok, .task .proof:not(.bad):not(.warn) { width: 18px; justify-content: center; }
+.task .proof.warn { color: var(--review); }
+.task .proofs { gap: 8px; }
+
+/* ---------- one task: the brief ---------- */
+.thead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.thead .verb { font-size: 14px; padding: 3px 10px; border-radius: 8px; }
+.brief { margin-top: 18px; }
+.ba { display: grid; grid-template-columns: 70px 1fr; gap: 8px 14px; margin: 0; font-size: 18px; align-items: baseline; }
+.ba dt { font-size: 13px; color: var(--faint); }
+.ba dd { margin: 0; }
+.ba .c { color: var(--review); }
+.proofs.big { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.proofs.big .proof { font-size: 13.5px; color: var(--muted); background: var(--chip); padding: 4px 10px 4px 8px; border-radius: 999px; }
+.proofs.big .proof.bad { color: var(--bad); } .proofs.big .proof.warn { color: var(--review); }
+.decs { margin-top: 26px; }
+.decs ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.decs li { display: flex; align-items: baseline; gap: 10px; font-size: 15.5px; }
+.decs .dd { width: 7px; height: 7px; border-radius: 2px; transform: rotate(45deg) translateY(-1px); background: var(--muted); flex: none; }
+.decs li.low .dd { background: var(--review-mark); } .decs li.you .dd { background: var(--accent); }
+.decs .tag { font-size: 12.5px; color: var(--accent); white-space: nowrap; }
+.replay-h { margin-top: 38px; }
 </style>
 </head>
 <body>
@@ -250,6 +260,10 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
     again: () => svg('<path d="M3 8a5 5 0 1 0 1.6-3.7M3 2.5v3h3"/>', 2),
     you: () => svg('<path d="M3 13.5c.6-2.4 2.6-3.8 5-3.8s4.4 1.4 5 3.8"/><circle cx="8" cy="5.2" r="2.6"/>', 1.8),
     side: () => svg('<path d="M5 11l6-6M6 5h5v5"/>', 2.2),
+    x: () => svg('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>', 2.2),
+    eye: () => svg('<path d="M1.8 8s2.3-4.3 6.2-4.3S14.2 8 14.2 8 11.9 12.3 8 12.3 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>', 1.6),
+    dash: () => svg('<path d="M4.5 8h7"/>', 2.2),
+    up: () => svg('<path d="M8 12.5v-9M4.5 7L8 3.5 11.5 7"/>', 2),
   };
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const dur = ms => {
@@ -289,17 +303,13 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
   // ---------- data ----------
   let tasks = null, failed = false;
   let project = '';
-  const facts = t => {
-    const changed = t.decisions.filter(d => d.override).length;
-    const yourSteps = t.done.filter(d => d.edited).length;
-    return { changed, yourSteps, fus: t.followups.length, you: changed + yourSteps + t.followups.length };
-  };
 
   async function load() {
     try {
       const r = await fetch('/api/history', { headers: { 'x-token': TOKEN } });
       if (!r.ok) throw new Error(r.status);
       tasks = (await r.json()).tasks;
+      try { localStorage.setItem('history-seen', String(Date.now())); } catch {}
     } catch { failed = true; }
     route();
   }
@@ -319,111 +329,124 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
   }
 
   // ---------- the list ----------
+  // When you last opened History (kept in this browser only), so the page can lead with what's new.
+  let lastSeen = 0;
+  try { lastSeen = Number(localStorage.getItem('history-seen')) || 0; } catch {}
+  let showOlder = false;
+
+  const VERB_CLASS = { Fixed: 'v-fixed', Added: 'v-added', Changed: 'v-changed', Removed: 'v-removed' };
+  const verbTag = t => t.summary ? h('span', { class: 'verb ' + (VERB_CLASS[t.summary.verb] || '') }, t.summary.verb) : null;
+  const headline = t => t.summary ? t.summary.headline.replace(/^./, c => c.toUpperCase()) : t.title;
+
+  // What the page saw happen. Never written by Claude.
+  function proofChips(t, full) {
+    const p = t.proof;
+    if (!p) return [];
+    const chips = [];
+    if (p.tests === 'passed') chips.push(['ok', ICON.check(), 'Tests pass']);
+    if (p.tests === 'failed') chips.push(['bad', ICON.x(), 'Tests fail']);
+    if (p.looked) chips.push(['ok', ICON.eye(), full ? 'Checked in browser' : 'Checked']);
+    if (!p.tests && !p.looked) chips.push(['warn', ICON.dash(), 'Not checked']);
+    if (p.pushed) chips.push(['', ICON.up(), 'Pushed']);
+    else if (p.committed) chips.push(['warn', ICON.up(), 'Not pushed']);
+    return chips.map(([cls, icon, label]) => h('span', { class: 'proof ' + cls, title: label }, icon, h('span', { class: 'pl' }, label)));
+  }
+
+  // Things only you can settle: a catch you haven't accepted, failing tests, work that never left your machine.
+  function needsYou(shown) {
+    const items = [];
+    const unpushed = new Set();
+    for (const t of shown) {
+      const ack = t.ack || [];
+      if (t.summary && t.summary.catch && !ack.includes('catch')) items.push({ t, what: 'catch', tone: 'warn', text: t.summary.catch });
+      if (t.proof && t.proof.tests === 'failed' && !ack.includes('tests')) items.push({ t, what: 'tests', tone: 'bad', text: 'Tests failed' });
+      // One line per session: the newest commit that was never pushed.
+      if (t.proof && t.proof.committed && !t.proof.pushed && !ack.includes('push') && !unpushed.has(t.session)) {
+        unpushed.add(t.session); items.push({ t, what: 'push', tone: 'info', text: 'Not pushed yet' });
+      }
+    }
+    return items;
+  }
+
+  function ack(item) {
+    item.t.ack = [...(item.t.ack || []), item.what];
+    fetch('/api/user/ack', { method: 'POST', headers: { 'content-type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: item.t.session, key: item.t.key, what: item.what }) }).catch(() => {});
+    route();
+  }
+
+  function needsSection(items) {
+    if (!items.length) return h('p', { class: 'calm' }, ICON.check(), 'Nothing needs you.');
+    return h('section', { class: 'needs', 'aria-label': 'Needs you' },
+      h('h2', {}, 'Needs you'),
+      h('ul', {}, items.map(it => h('li', { class: 'need ' + it.tone },
+        h('span', { class: 'nd' }),
+        h('a', { class: 'nt', href: '#' + encodeURIComponent(it.t.key) }, h('b', {}, it.text), h('span', {}, headline(it.t))),
+        h('button', { class: 'fine', onclick: () => ack(it), title: 'Stop listing this here' }, 'Fine')))));
+  }
+
   function list() {
     if (failed) return [topBar(), h('h1', {}, 'History'), h('div', { class: 'empty-state' }, h('b', {}, 'Couldn’t load the history.'), 'Open the link Claude gave you, then try again.')];
     if (!tasks) return [topBar(), h('h1', {}, 'History')];
     if (!tasks.length) return [topBar(), h('h1', {}, 'History'),
-      h('div', { class: 'empty-state' }, h('b', {}, 'Nothing here yet.'), 'Finished tasks land here, with every step, decision and change you made.')];
+      h('div', { class: 'empty-state' }, h('b', {}, 'Nothing here yet.'), 'Finished tasks land here.')];
 
     const projects = [...new Set(tasks.map(t => t.project).filter(Boolean))];
     const shown = tasks.filter(t => !project || t.project === project);
-    const steps = shown.reduce((a, t) => a + t.done.length, 0);
-    const decisions = shown.reduce((a, t) => a + t.decisions.filter(d => !d.supersedes).length, 0);
-    const you = shown.reduce((a, t) => a + facts(t).you, 0);
-    const spanDays = Math.max(1, Math.round((Date.now() - Math.min(...shown.map(t => t.startedAt))) / DAY));
-
-    const lede = h('p', { class: 'lede' },
-      `Claude finished ${plural(shown.length, 'task')} across ${plural(new Set(shown.map(t => t.session)).size, 'session')} ${spanDays <= 1 ? 'today' : `in the last ${plural(spanDays, 'day')}`}`,
-      you ? `, and you stepped in ${you === 1 ? 'once' : you + ' times'}.` : '.');
-
-    const stats = h('div', { class: 'stats' },
-      [[shown.length, 'tasks'], [steps, 'steps done'], [decisions, 'decisions'], [you, 'times you steered', 'you']].map(([n, label, cls], i) =>
-        h('div', { class: 'stat' + (cls ? ' ' + cls : ''), style: `animation-delay:${i * 60}ms` }, h('b', { 'data-n': n }, reduced ? String(n) : '0'), h('span', {}, label))));
-
-    // the last 30 days, one column each
-    const today = dayStart(Date.now());
-    const perDay = Array.from({ length: 30 }, (_, i) => ({ start: today - (29 - i) * DAY, steps: 0, tasks: 0 }));
-    for (const t of shown) {
-      const i = 29 - Math.round((today - dayStart(t.endedAt)) / DAY);
-      if (i >= 0 && i < 30) { perDay[i].steps += Math.max(1, t.done.length); perDay[i].tasks++; }
-    }
-    const max = Math.max(1, ...perDay.map(d => d.steps));
-    const ribbon = h('div', { class: 'ribbon', 'aria-label': 'Tasks per day, last 30 days' },
-      h('div', { class: 'cols' }, perDay.map((d, i) => h('div', {
-        class: 'col' + (d.tasks ? '' : ' empty') + (i === 29 ? ' today' : ''),
-        title: `${dayLabel(d.start)} · ${d.tasks ? `${plural(d.tasks, 'task')}, ${plural(d.steps, 'step')}` : 'nothing'}`,
-        onclick: d.tasks ? () => document.getElementById('day-' + d.start)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }) : null,
-      }, h('i', { style: d.tasks ? `height:${Math.max(10, Math.sqrt(d.steps / max) * 100)}%;animation-delay:${200 + i * 18}ms` : '' })))),
-      h('div', { class: 'ticks' }, h('span', {}, new Date(perDay[0].start).toLocaleDateString([], { month: 'short', day: 'numeric' })), h('span', {}, 'Today')));
-
     const chips = projects.length > 1 && h('div', { class: 'chips', role: 'group', 'aria-label': 'Project' },
       ['', ...projects].map(p => h('button', { class: 'chip', 'aria-pressed': String(project === p), onclick: () => { project = p; route(); } }, p || 'All projects')));
 
-    // Session > tasks. Each session sits under the day it was last active.
-    const bySession = new Map();
-    for (const t of shown) { if (!bySession.has(t.session)) bySession.set(t.session, []); bySession.get(t.session).push(t); }
-    const groups = [];
-    for (const items of bySession.values()) {
-      const k = dayStart(items[0].endedAt);
-      if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, sessions: [] });
-      groups[groups.length - 1].sessions.push(items);
-    }
+    const fresh = lastSeen ? shown.filter(t => t.endedAt > lastSeen) : shown;
+    const older = lastSeen ? shown.filter(t => t.endedAt <= lastSeen) : [];
     let n = 0;
-    const days = groups.map(g => h('section', { class: 'day', id: 'day-' + g.k },
-      h('h2', {}, dayLabel(g.k)),
-      h('ul', { class: 'sessions' }, g.sessions.map(items => h('li', {}, sessionCard(items, n++))))));
+    const sessionsOf = items => {
+      const by = new Map();
+      for (const t of items) { if (!by.has(t.session)) by.set(t.session, []); by.get(t.session).push(t); }
+      return h('ul', { class: 'sessions' }, [...by.values()].map(group => h('li', {}, sessionCard(group, n++))));
+    };
 
-    requestAnimationFrame(countUp);
-    return [topBar(), h('h1', {}, 'History'), lede, stats, ribbon, chips, ...days,
+    const body = [];
+    if (lastSeen) {
+      body.push(h('h2', { class: 'since' }, fresh.length ? `New since you last looked` : `Nothing new since ${dayLabel(lastSeen).toLowerCase() === 'today' ? clockTime(lastSeen) : dayLabel(lastSeen)}`));
+      if (fresh.length) body.push(sessionsOf(fresh));
+      if (older.length) {
+        body.push(h('button', { class: 'older', 'aria-expanded': String(showOlder), onclick: () => { showOlder = !showOlder; route(); } },
+          showOlder ? 'Hide earlier tasks' : `Earlier · ${plural(older.length, 'task')}`));
+        if (showOlder) body.push(sessionsOf(older));
+      }
+    } else body.push(sessionsOf(fresh));
+
+    return [topBar(), h('h1', {}, 'History'), chips, needsSection(needsYou(shown)), ...body,
       h('p', { class: 'foot' }, 'Read-only. Tasks are kept for 30 days.')];
   }
 
-  function countUp() {
-    if (reduced) return;
-    const els = [...app.querySelectorAll('.stat b')];
-    const t0 = performance.now();
-    const tick = now => {
-      const p = Math.min(1, (now - t0) / 900), e = 1 - Math.pow(1 - p, 3);
-      for (const el of els) el.textContent = String(Math.round(Number(el.dataset.n) * e));
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
   // One session: named after the task it started with, its tasks newest first.
-  const SHOW = 3;
+  const SHOW = 4;
   const openSessions = new Set();
-  // A session is named after the first task it ran.
   const sessionName = id => { const own = tasks.filter(t => t.session === id); return own.length ? own[own.length - 1].title : ''; };
   function sessionCard(items, i) {
-    const first = items[items.length - 1], last = items[0];
-    const start = Math.min(...items.map(t => t.startedAt)), endAt = last.endedAt;
+    const all = tasks.filter(t => t.session === items[0].session);
+    const first = all[all.length - 1], last = all[0];
+    const start = Math.min(...all.map(t => t.startedAt));
+    const when = dayStart(start) === dayStart(last.endedAt) ? `${dayLabel(start)}, ${clockTime(start)} – ${clockTime(last.endedAt)}` : `${dayLabel(start)} – ${dayLabel(last.endedAt)}`;
     const parentName = first.parent && sessionName(first.parent);
-    const when = dayStart(start) === dayStart(endAt) ? `${clockTime(start)} – ${clockTime(endAt)}` : `${dayLabel(start)} – ${clockTime(endAt)}`;
-    const meta = [first.project, when, plural(items.length, 'task')].filter(Boolean).join(' · ');
     const open = openSessions.has(first.session);
     const visible = open ? items : items.slice(0, SHOW);
-    const delay = Math.min(i, 10) * 50;
-    return h('article', { class: 'session', id: 's-' + first.session, style: `animation-delay:${delay}ms` },
+    return h('article', { class: 'session', id: 's-' + first.session, style: `animation-delay:${Math.min(i, 10) * 50}ms` },
       h('header', { class: 'shead' },
-        h('div', { class: 'sname' }, first.title,
-          first.sessionLive ? h('span', { class: 'live', title: 'This session is still open' }, 'Open') : null),
-        h('div', { class: 'smeta' }, meta, parentName ? h('span', {}, ' · side session of ', h('button', { class: 'plink', onclick: () => document.getElementById('s-' + first.parent)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' }) }, parentName)) : null)),
-      h('ol', { class: 'tasks' }, visible.map((t, k) => h('li', {}, taskRow(t, delay + k * 40)))),
+        h('div', { class: 'sname' }, first.title, first.sessionLive ? h('span', { class: 'live', title: 'This session is still open' }, 'Open') : null),
+        h('div', { class: 'smeta' }, [first.project, when, parentName && `side session of ${parentName}`].filter(Boolean).join(' · '))),
+      h('ol', { class: 'tasks' }, visible.map(t => h('li', {}, taskRow(t)))),
       items.length > SHOW ? h('button', { class: 'more', onclick: () => { open ? openSessions.delete(first.session) : openSessions.add(first.session); route(); } },
-        open ? 'Show fewer' : `Show ${plural(items.length - SHOW, 'earlier task')}`) : null);
+        open ? 'Show fewer' : `Show ${items.length - SHOW} more`) : null);
   }
 
-  function taskRow(t, delay) {
-    const f = facts(t);
-    const sub = [dur(t.endedAt - t.startedAt), `${t.done.length} of ${t.done.length + t.dropped.length} steps`,
-      t.decisions.length && plural(t.decisions.filter(d => !d.supersedes).length, 'decision')].filter(Boolean).join(' · ');
+  // One line: verb, headline, proof, time.
+  function taskRow(t) {
     return h('a', { class: 'task', href: '#' + encodeURIComponent(t.key) },
-      h('div', { class: 'top' },
-        h('span', { class: 'title' }, t.title),
-        h('span', { class: 'when' }, clockTime(t.endedAt))),
-      h('div', { class: 'sub' }, sub, f.you ? h('span', { class: 'you' }, ` · you steered ${f.you === 1 ? 'once' : f.you + '×'}`) : null),
-      thread(t, delay));
+      verbTag(t),
+      h('span', { class: 'title' + (t.summary ? '' : ' plain') }, headline(t)),
+      h('span', { class: 'proofs' }, proofChips(t, false)),
+      h('span', { class: 'when' }, clockTime(t.endedAt)));
   }
 
   // Everything that happened in a task, in time order.
@@ -436,35 +459,11 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
     return ev.filter(e => Number.isFinite(e.t)).sort((a, b) => a.t - b.t);
   }
 
-  // A task's shape: longer tasks draw longer lines, quiet stretches leave gaps.
-  function thread(t, delay) {
-    const ev = timeline(t).filter(e => e.kind !== 'fudone');
-    const total = Math.max(1, t.endedAt - t.startedAt);
-    const count = ev.length + t.dropped.length;
-    const width = Math.min(100, Math.max(28, count * 6, 22 + Math.log10(total / 1000 + 1) * 19)); // room for every mark, even on a phone
-    const xs = [];
-    let acc = 0, prev = t.startedAt;
-    // The wait before the first event isn't shown; gaps between events are (softened).
-    ev.forEach((e, k) => { acc += k ? Math.sqrt(Math.max(0, e.t - prev)) + 18 : 0; prev = e.t; xs.push(acc); });
-    const dropN = t.dropped.length;
-    for (let k = 0; k < dropN; k++) { acc += 40; xs.push(acc); }
-    const end = Math.max(1, acc);
-    const pos = x => 3 + (x / end) * (width - 4);
-    const nodes = ev.map((e, k) => {
-      const cls = e.kind === 'step' ? 'n' : e.kind === 'dec' ? `n k-dec${e.d.confidence === 'low' ? ' low' : ''}` : e.kind === 'you' ? 'n k-you' : e.kind === 'fu' ? 'n k-fu' : 'n k-side';
-      const label = e.kind === 'step' ? e.d.text : e.kind === 'dec' ? `Decided: ${e.d.text}` : e.kind === 'you' ? `You: ${e.d.override.text}` : e.kind === 'fu' ? `You asked: ${e.f.text}` : `Side session: ${e.c.title || ''}`;
-      return h('span', { class: cls, title: label, style: `left:${pos(xs[k])}%;animation-delay:${delay + 250 + k * 35}ms` });
-    });
-    for (let k = 0; k < dropN; k++) nodes.push(h('span', { class: 'n k-drop', title: `Not done: ${t.dropped[k]}`, style: `left:${pos(xs[ev.length + k])}%;animation-delay:${delay + 250 + (ev.length + k) * 35}ms` }));
-    return h('div', { class: 'thread', 'aria-hidden': 'true' }, h('span', { class: 'line', style: `width:${width}%;animation-delay:${delay + 120}ms` }), nodes);
-  }
-
   // ---------- one task, replayable ----------
   let player = null;
   function stop() { if (player) { clearTimeout(player.timer); player = null; } }
 
   function detail(t) {
-    const f = facts(t);
     const all = t.decisions;
     const doneIds = new Set(t.done.map(d => d.id));
     // Attach each item to its step; if its step is gone, to the first step finished after it.
@@ -482,22 +481,30 @@ h1 { margin: 22px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 680; l
     const drops = t.dropped.map(text => h('li', { class: 'step drop' }, h('span', { class: 'dot' }), h('div', { class: 'head' }, h('span', { class: 'text' }, text), h('span', { class: 'took' }, 'not done'))));
     const map = h('ol', { class: 'map', 'aria-label': 'Steps' }, h('span', { class: 'rail', 'aria-hidden': 'true' }), rows, drops);
 
-    const total = t.endedAt - t.startedAt;
-    const parts = [h('b', {}, `${t.done.length} of ${t.done.length + t.dropped.length} steps`), ` done in ${dur(total)}`];
-    const roots = all.filter(d => !d.supersedes).length;
-    if (roots) parts.push(`, with ${plural(roots, 'decision')}`);
-    parts.push('.');
-    if (f.you) {
-      const bits = [f.changed && `changed ${plural(f.changed, 'decision')}`, f.yourSteps && `edited ${plural(f.yourSteps, 'step')}`, f.fus && `added ${plural(f.fus, 'follow-up')}`].filter(Boolean);
-      parts.push(' ', h('span', { class: 'you' }, `You ${bits.join(', ').replace(/, ([^,]*)$/, ' and $1')}.`));
-    }
-
     const ev = timeline(t);
+    const sum = t.summary;
+    // The newest wording of each decision, and whether you changed it.
+    const decisions = all.filter(d => !d.supersedes).map(root => {
+      let d = root;
+      for (let i = 0; i < 20; i++) { const next = all.find(x => x.supersedes === d.id); if (!next) break; d = next; }
+      return { text: d.text, why: d.reason, you: !!(root.override || d !== root), low: d.confidence === 'low' };
+    });
+    const brief = h('section', { class: 'brief' },
+      sum ? h('dl', { class: 'ba' },
+        h('dt', {}, 'Before'), h('dd', {}, sum.before),
+        h('dt', {}, 'After'), h('dd', {}, sum.after),
+        sum.catch ? [h('dt', { class: 'c' }, 'Catch'), h('dd', { class: 'c' }, sum.catch)] : null) : null,
+      t.proof ? h('div', { class: 'proofs big' }, proofChips(t, true)) : null,
+      decisions.length ? h('div', { class: 'decs' }, h('h2', {}, plural(decisions.length, 'decision')),
+        h('ul', {}, decisions.map(d => h('li', { class: d.you ? 'you' : d.low ? 'low' : '', title: d.why || '' },
+          h('span', { class: 'dd' }), d.text, d.you ? h('span', { class: 'tag' }, 'you changed this') : null)))) : null);
+
     const view = [
       topBar('list'),
-      h('div', { class: 'kicker' }, [t.project, `${dayLabel(t.endedAt)}, ${clockTime(t.startedAt)} – ${clockTime(t.endedAt)}`].filter(Boolean).flatMap((x, i) => i ? [h('span', { class: 'sep' }, '·'), x] : [x])),
-      h('h1', {}, t.title),
-      h('p', { class: 'story' }, parts),
+      h('div', { class: 'kicker' }, [t.project, `${dayLabel(t.endedAt)}, ${clockTime(t.startedAt)} – ${clockTime(t.endedAt)}`, dur(t.endedAt - t.startedAt)].filter(Boolean).flatMap((x, i) => i ? [h('span', { class: 'sep' }, '·'), x] : [x])),
+      h('h1', { class: 'thead' }, verbTag(t), headline(t)),
+      brief,
+      h('h2', { class: 'replay-h' }, `Steps · ${t.done.length} of ${t.done.length + t.dropped.length} done`),
       ev.length > 1 ? playerBar(t, ev) : null,
       map,
       h('p', { class: 'foot' }, 'Read-only. This is how the task ended.'),

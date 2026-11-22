@@ -13,6 +13,10 @@ async function run(session, name, args) {
   } else if (name === 'record_decision') {
     const r = await call('POST', '/api/agent/decision', { session, ...args });
     text = `Recorded as ${r.id}.`;
+  } else if (name === 'summarize_task') {
+    const r = await call('POST', '/api/agent/summary', { session, ...args });
+    text = r.message;
+    if (!r.ok) return text;
   } else if (name === 'followup_done') {
     await call('POST', '/api/agent/followup_done', { session, id: args.id });
   } else if (name === 'get_user_edits') {

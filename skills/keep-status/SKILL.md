@@ -16,6 +16,9 @@ The user watches a small page instead of interrupting you. It shows your steps a
    - `medium`: sensible default.
    - `low`: a guess. The page flags these for the user to review, so be honest.
 4. **When a step is done or the plan changes**, call `update_plan` again with the remaining steps, starting with the one you're on. Dropping a finished step from the front is how the page marks it done.
+5. **When the task is done**, call `summarize_task` once, before your final message: a verb (Fixed, Added, Changed or Removed), a headline of at most 5 words, how it was before and how it is now (at most 6 words each), and a catch (the one downside, at most 6 words) only if there is one. Use words a non-programmer would use. The page refuses anything longer.
+   - Good: Fixed · "push question" · before "Button did nothing" · after "Says answer in the chat" · catch "Guesses approvals by keyword".
+   - The page adds the proof itself (tests run, checked in the browser, pushed), so don't claim those.
 
 Write for a person glancing at their phone: short, concrete, no jargon, no tool names, no file dumps. Don't record trivial steps as decisions.
 
@@ -41,6 +44,7 @@ A session that was already open when the plugin was installed doesn't have these
 node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" plan "Short title" "Step you're on" "Next step" ...
 node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" now "What you're doing"
 node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" decision "The choice" "Why" high|medium|low [id it replaces]
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" summary Fixed "Headline" "Before" "After" ["Catch"]
 node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" followup-done <id>
 node "${CLAUDE_PLUGIN_ROOT}/src/cli.js" edits
 ```

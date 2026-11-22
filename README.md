@@ -26,7 +26,11 @@ Give Claude any multi-step task and open the page with `/status-page:open`. The 
 - **Questions:** when Claude ends a turn with a question (the desktop app's next-step box), it shows on the page with the same buttons, plus *Reply…* for your own words. Your answer wakes Claude. Claude Code's own permission checks still apply to whatever it does next.
 - **Permissions:** when Claude Code is about to ask your permission (say, to run a command) and the session's page is open, the request shows on the page: *Allow*, *Deny* or *Always allow*. Your click is Claude Code's own permission decision. Unanswered for 10 minutes, Claude Code asks as usual. In auto mode Claude Code decides by itself and doesn't ask, so nothing shows here. Anyone with the page link can answer, so keep it to yourself.
 - **Pause and Resume:** Pause stops the agent at its next step (whatever it is running finishes first). While it's paused, your edits wait. Resume wakes it where it left off, edits included. Typing to Claude also resumes it.
-- **History:** the clock button opens every finished task from the last 30 days, across projects. Each one shows its steps, decisions and what you changed, and **Replay** plays the task back step by step. Read-only.
+- **History:** the clock button opens the last 30 days of work, grouped by session. Built to be skimmed, not read:
+  - **Needs you** lists only what you have to settle: a downside Claude flagged, failing tests, commits that were never pushed. Click **Fine** to clear one.
+  - Each task is one line: a verb (Fixed, Added, Changed, Removed), a headline of at most 5 words, and **proof** the page saw happen: tests passed or failed, checked in the browser, pushed. Proof comes from the commands Claude ran, never from what it says.
+  - It leads with what's new since you last looked; older tasks fold away.
+  - Opening a task shows **Before / After / Catch** in at most 6 words each, the decisions, and a replay of the steps. Claude writes the summary when it finishes; the page refuses anything longer.
 
 Your edits reach the agent between its steps. In an open session, they wake it up even after it has stopped.
 

@@ -58,6 +58,7 @@ function blank(id) {
     next: [], agentNext: [], done: [],
     followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0, taskStartedAt: 0,
     pending: { plan: null, overrides: [], followups: [], answer: null },
+    proof: {}, summary: null, ack: [],
     question: null, // { id, text, options, at, state: 'open' | 'sent' | 'received', answer } when Claude asked the user something
     edits: { state: 'none', at: 0 },
     shared: false,
@@ -83,6 +84,7 @@ function migrate(s) {
   s.pending.followups = s.pending.followups || [];
   if (s.pending.answer === undefined) s.pending.answer = null;
   if (s.question === undefined) s.question = null;
+  s.proof = s.proof || {}; s.ack = s.ack || []; if (s.summary === undefined) s.summary = null;
   s.permissions = s.permissions || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
   if (s.now) delete s.now.file; // file names are no longer shown
@@ -356,6 +358,61 @@ function sameTask(s, texts) {
   return texts.filter(t => have.has(t)).length * 2 >= texts.length;
 }
 // The first plan of a task marks when it started (shown in history).
+// ---------- proof: what the page saw happen, not what the agent says ----------
+const TEST_CMD = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(pytest|jest|vitest|rspec|phpunit|mocha)\b|\bgo test\b|\bcargo test\b|\bnode --test\b|\bmake (test|check)\b|\bpython3? -m (pytest|unittest)\b|\bswift test\b|\b(gradlew?|mvn)\b[^|;&]*\btest\b|\bxcodebuild\b[^|;&]*\btest\b/;
+const GIT = verb => new RegExp(`\\bgit\\s+(-C\\s+\\S+\\s+)?${verb}\\b`);
+const LOOK_TOOL = /(Claude_Browser|claude-in-chrome|Claude_Code_iOS_Simulator|playwright|puppeteer)[^]*(screenshot|computer|read_page|get_page_text|javascript|find|batch|zoom|control)/i;
+// phase 'start' (before the tool runs) or 'ok' (it finished without error). A failed run never reports 'ok'.
+function noteProof(s, tool, command, phase) {
+  const p = s.proof = s.proof || {};
+  const now = Date.now();
+  if (tool === 'Bash' && command) {
+    if (TEST_CMD.test(command)) {
+      if (phase === 'ok') Object.assign(p, { tests: 'passed', testsCmd: command, testsAt: now });
+      // The before-hook runs in the background and can land after the result: don't undo a pass.
+      else if (!(p.tests === 'passed' && p.testsCmd === command && now - p.testsAt < 15000)) Object.assign(p, { tests: 'ran', testsCmd: command, testsAt: now });
+    }
+    if (phase === 'ok' && GIT('commit').test(command)) p.committed = now;
+    if (phase === 'ok' && GIT('push').test(command)) p.pushed = now;
+  }
+  if (phase === 'ok' && LOOK_TOOL.test(tool)) p.looked = now;
+}
+const proofOf = p => p && Object.keys(p).length ? { tests: p.tests === 'ran' ? 'failed' : p.tests || null, looked: !!p.looked, committed: !!p.committed, pushed: !!p.pushed } : null;
+
+// ---------- the task's summary: a verb, a headline and three short lines, written by the agent ----------
+const VERBS = ['Fixed', 'Added', 'Changed', 'Removed'];
+const words = t => String(t || '').trim().split(/\s+/).filter(Boolean);
+function agentSummary(s, b) {
+  const verb = VERBS.find(v => v.toLowerCase() === String(b.verb || '').trim().toLowerCase());
+  const problems = [];
+  if (!verb) problems.push(`verb must be one of ${VERBS.join(', ')}`);
+  const check = (name, max, need) => {
+    const n = words(b[name]).length;
+    if (need && !n) problems.push(`${name} is missing`);
+    if (n > max) problems.push(`${name} has ${n} words, at most ${max}`);
+  };
+  check('headline', 5, true); check('before', 6, true); check('after', 6, true); check('catch', 6, false);
+  if (problems.length) return { ok: false, message: `Not saved: ${problems.join('; ')}. Use plain everyday words, no jargon, and try again.` };
+  const clean = t => words(t).join(' ').replace(/[.]+$/, '');
+  const summary = { verb, headline: clean(b.headline), before: clean(b.before), after: clean(b.after), catch: clean(b.catch) || '', at: Date.now() };
+  // Written just after the task was filed away: it belongs to that task.
+  const last = s.earlier[0];
+  if (!s.done.length && !s.next.length && last && !last.summary && Date.now() - (last.endedAt || 0) < 30 * 60 * 1000) last.summary = summary;
+  else s.summary = summary;
+  return { ok: true, message: 'Saved.' };
+}
+// The user said a catch, failed test or unpushed work is fine: stop listing it under Needs you.
+function userAck(key, what) {
+  for (const s of sessions.values()) {
+    const t = key === 'now-' + s.id ? s : s.earlier.find(e => e.id === key);
+    if (!t) continue;
+    t.ack = [...new Set([...(t.ack || []), what])];
+    save(s);
+    return true;
+  }
+  return false;
+}
+
 function beginTask(s) {
   if (!s.taskStartedAt || (!s.done.length && !s.next.length && !s.decisions.length)) s.taskStartedAt = Date.now();
 }
@@ -374,7 +431,9 @@ function archiveTask(s) {
   s.earlier.unshift({
     id: newId('t'), title: s.title, startedAt: s.taskStartedAt || null, endedAt: lastActivity(s) || Date.now(),
     done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups, children,
+    proof: s.proof || null, summary: s.summary || null, ack: s.ack || [],
   });
+  s.proof = {}; s.summary = null; s.ack = [];
   if (s.earlier.length > 40) s.earlier.length = 40;
   s.taskStartedAt = 0;
   s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
@@ -602,6 +661,7 @@ function historyList() {
     title: (!t.title || /^\s*(<|\[SYSTEM)/.test(t.title) ? t.done[0]?.text || t.dropped[0] : t.title) || 'Untitled task', startedAt: t.startedAt || first(t), endedAt: Math.min(t.endedAt, lastActivity(t) || t.endedAt),
     done: t.done, dropped: t.dropped, decisions: t.decisions, followups: t.followups,
     children: (t.children || []).map(c => ({ ...c, ...childInfo(c) })),
+    proof: proofOf(t.proof), summary: t.summary || null, ack: t.ack || [],
   });
   for (const s of sessions.values()) {
     for (const t of s.earlier || []) add(s, t, t.id);
@@ -609,8 +669,13 @@ function historyList() {
     const over = s.done.length && s.status !== 'working' && (!s.next.length || s.status === 'ended');
     if (over) add(s, { title: s.title, startedAt: s.taskStartedAt, endedAt: Math.max(...s.done.map(d => d.at), ...s.decisions.map(d => d.at)),
       done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups,
-      children: s.children.filter(c => { const x = findChild(c); return x && x.status !== 'working'; }) }, 'now-' + s.id);
+      children: s.children.filter(c => { const x = findChild(c); return x && x.status !== 'working'; }),
+      proof: s.proof, summary: s.summary, ack: s.ack }, 'now-' + s.id);
   }
+  // A push sends every earlier commit in that session too.
+  const lastPush = new Map();
+  for (const t of out) if (t.proof && t.proof.pushed) lastPush.set(t.session, Math.max(lastPush.get(t.session) || 0, t.endedAt));
+  for (const t of out) if (t.proof && t.proof.committed && !t.proof.pushed && (lastPush.get(t.session) || 0) >= t.endedAt) t.proof.pushed = true;
   return out.sort((a, b) => b.endedAt - a.endedAt);
 }
 
@@ -731,6 +796,17 @@ const server = http.createServer(async (req, res) => {
       case '/api/user/permission':
         userPermission(s, String(body.id || ''), body.behavior === 'allow' ? 'allow' : 'deny', !!body.always);
         return send(res, 200, view(s));
+      case '/api/hook/proof': // a tool finished without error
+        noteProof(s, String(body.tool || ''), typeof body.command === 'string' ? body.command : '', 'ok');
+        save(s);
+        return send(res, 200, { ok: true });
+      case '/api/agent/summary': {
+        const r = agentSummary(s, body);
+        if (r.ok) changed(s);
+        return send(res, 200, r);
+      }
+      case '/api/user/ack':
+        return send(res, userAck(String(body.key || ''), String(body.what || '')) ? 200 : 404, { ok: true });
       case '/api/hook/question':
         hookQuestion(s, body.input);
         return send(res, 200, { ok: true });
@@ -748,7 +824,7 @@ const server = http.createServer(async (req, res) => {
         const said = typeof body.prompt === 'string' ? userWords(body.prompt) : '';
         // Automated turns (background-task notices, other sessions' messages) aren't the user talking.
         const fromUser = said && !/^(\[SYSTEM NOTIFICATION|<(task-notification|side-sessions-event|cross-session-message|ci-monitor-event)\b)/i.test(said);
-        if (body.tool) s.toolCalls = (s.toolCalls || 0) + 1;
+        if (body.tool) { s.toolCalls = (s.toolCalls || 0) + 1; noteProof(s, body.tool, body.command, 'start'); }
         if (fromUser && s.question) { s.question = null; s.pending.answer = null; } // answered (or moved on) in the chat
         if (fromUser && !said.startsWith('/')) {
           s.lastPrompt = short(said, 200); s.promptTitle = titleFrom(said); s.promptAt = Date.now(); // shown while the agent hasn't said what it's doing

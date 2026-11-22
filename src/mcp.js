@@ -12,7 +12,7 @@ const { run: runAction } = require('./actions');
 const SESSION = process.env.CLAUDE_CODE_SESSION_ID || `pid:${process.ppid}`;
 
 const INSTRUCTIONS = `This session has a live status page the user watches and edits instead of asking you for updates.
-For any task with three or more steps: call update_plan first (a short title and the remaining steps), set_now when you start each step, and record_decision for each meaningful choice (with an honest confidence). Keep it brief: one plain line each. Skip it for quick questions. (If you don't call update_plan, the page follows your own task list instead.)
+For any task with three or more steps: call update_plan first (a short title and the remaining steps), set_now when you start each step, and record_decision for each meaningful choice (with an honest confidence). Keep it brief: one plain line each. When the task is done, call summarize_task once. Skip all of this for quick questions. (If you don't call update_plan, the page follows your own task list instead.)
 The user can edit the steps, override a decision, or add a follow-up to a step on the page. Those edits reach you between steps and in tool results. Follow them, and call followup_done when you finish a follow-up.`;
 
 const TOOLS = [
@@ -51,6 +51,21 @@ const TOOLS = [
         supersedes: { type: 'string', description: 'Id of an earlier decision this replaces (e.g. after the user overrode it)' },
       },
       required: ['decision', 'reason', 'confidence'],
+    },
+  },
+  {
+    name: 'summarize_task',
+    description: 'When a task is finished, sum it up for the History page in plain everyday words, no jargon. Strict word limits; the page refuses longer text. Call once per task, before your final message.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        verb: { type: 'string', enum: ['Fixed', 'Added', 'Changed', 'Removed'] },
+        headline: { type: 'string', description: 'What, in at most 5 words, read after the verb. E.g. verb Fixed + "push question"' },
+        before: { type: 'string', description: 'How it was before, at most 6 words. E.g. "Button did nothing"' },
+        after: { type: 'string', description: 'How it is now, at most 6 words. E.g. "Says answer in the chat"' },
+        catch: { type: 'string', description: 'Optional: the one downside the user should know, at most 6 words. Leave out if none.' },
+      },
+      required: ['verb', 'headline', 'before', 'after'],
     },
   },
   {
