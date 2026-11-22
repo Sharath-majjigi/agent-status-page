@@ -8,7 +8,7 @@ const { request, ensureServer, HOME } = require('./client');
 const mode = process.argv[2];
 const OWN_TOOLS = /^mcp__plugin_status-page_status__/;
 const PROOF_TOOLS = /Claude_Browser|claude-in-chrome|Claude_Code_iOS_Simulator|playwright|puppeteer/i;
-const bashCommand = input => input.tool_name === 'Bash' ? String((input.tool_input || {}).command || '').slice(0, 500) : '';
+const bashCommand = input => input.tool_name === 'Bash' ? String((input.tool_input || {}).command || '').slice(0, 20000) : '';
 
 let raw = '';
 process.stdin.setEncoding('utf8');
