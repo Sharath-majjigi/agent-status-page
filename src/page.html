@@ -242,6 +242,15 @@ h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
 .ask.received .ask-k::before { background: var(--live); }
 
 /* ---------- a permission prompt ---------- */
+.ask.dialog .aq + .aq { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ask-opts { display: grid; gap: 6px; margin-bottom: 12px; }
+.opt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; padding: 9px 12px; border-radius: 10px; background: var(--chip); transition: background .15s, box-shadow .15s; }
+.opt:hover { background: var(--hover); }
+.opt b { font-weight: 560; }
+.opt span { font-size: 14px; color: var(--muted); }
+.opt.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.ask-opts .link { justify-self: start; margin-left: 2px; }
+.ask .other { margin: 2px 0 0; }
 .ask.perm { box-shadow: var(--shadow), inset 0 0 0 1px var(--review-soft); }
 .ask.perm .ask-k { color: var(--review); }
 .ask.perm .ask-k::before { background: var(--review-mark); }
@@ -401,7 +410,7 @@ footer svg { width: 14px; height: 14px; }
   const goTo = id => { if (id) location.hash = id; };
 
   // ---------- render ----------
-  const busy = () => ui.overrideOpen || ui.editingStep || ui.adding || ui.dragging || ui.fuAdding || ui.replying;
+  const busy = () => ui.overrideOpen || ui.editingStep || ui.adding || ui.dragging || ui.fuAdding || ui.replying || ui.askOther;
   // Live updates call render(); the user's own actions call paint().
   function render() {
     if (busy()) { const meta = app.querySelector('.meta'); if (meta && state) meta.replaceWith(header().meta); return; }
@@ -825,6 +834,7 @@ footer svg { width: 14px; height: 14px; }
     const list = state.permissions || [];
     if (!list.length || state.status === 'ended') return null;
     return list.map(p => {
+      if (p.kind === 'ask') return askCard(p);
       const decide = (behavior, always) => e => {
         for (const b of e.currentTarget.parentNode.querySelectorAll('button')) b.disabled = true;
         post('/api/user/permission', { id: p.id, behavior, always }).catch(() => paint());
@@ -841,6 +851,51 @@ footer svg { width: 14px; height: 14px; }
           h('button', { class: 'btn', onclick: decide('deny', false) }, 'Deny'),
           p.always && h('button', { class: 'link quiet', onclick: decide('allow', true), title: 'Allow this and don’t ask again' }, 'Always allow')));
     });
+  }
+
+  // ----- Claude's question dialog, answered here instead of in the app -----
+  const picks = new Map(); // request id -> { question text -> Set of labels, or typed text }
+  function askCard(p) {
+    const sel = picks.get(p.id) || new Map();
+    picks.set(p.id, sel);
+    const answerOf = q => { const v = sel.get(q.question); return v instanceof Set ? [...v].join(', ') : (v || '').trim(); };
+    const ready = p.questions.every(q => answerOf(q));
+    const send = () => {
+      const answers = Object.fromEntries(p.questions.map(q => [q.question, answerOf(q)]));
+      ui.askOther = null;
+      for (const b of app.querySelectorAll(`[data-ask="${p.id}"] button`)) b.disabled = true;
+      post('/api/user/permission', { id: p.id, behavior: 'allow', answers }).then(() => picks.delete(p.id)).catch(() => paint());
+    };
+    // One question with one choice: a click is the answer.
+    const quick = p.questions.length === 1 && !p.questions[0].multi;
+    return h('section', { class: 'ask dialog', 'aria-label': 'Claude asks', 'data-ask': p.id },
+      h('div', { class: 'ask-k' }, 'Claude asks'),
+      p.questions.map(q => {
+        const v = sel.get(q.question);
+        const typing = typeof v === 'string' && ui.askOther === p.id + q.question;
+        const pick = label => () => {
+          if (ui.askOther === p.id + q.question) ui.askOther = null;
+          if (q.multi) { const set = v instanceof Set ? v : new Set(); set.has(label) ? set.delete(label) : set.add(label); sel.set(q.question, set); }
+          else sel.set(q.question, label);
+          if (quick) return send();
+          paint();
+        };
+        const on = label => v instanceof Set ? v.has(label) : v === label;
+        return h('div', { class: 'aq' },
+          h('p', { class: 'ask-q' }, q.question),
+          h('div', { class: 'ask-opts' },
+            q.options.map(o => h('button', { class: 'opt' + (on(o.label) ? ' on' : ''), 'aria-pressed': String(on(o.label)), onclick: pick(o.label) },
+              h('b', {}, o.label), o.description ? h('span', {}, o.description) : null)),
+            typing
+              ? h('form', { class: 'other', onsubmit: e => { e.preventDefault(); if (quick && sel.get(q.question)?.trim()) send(); } },
+                  h('input', { class: 'edit', placeholder: 'Your answer', value: v, 'aria-label': 'Your answer',
+                    oninput: e => { sel.set(q.question, e.target.value); const b = app.querySelector(`[data-ask="${p.id}"] .send`); if (b) b.disabled = !p.questions.every(x => answerOf(x)); } }),
+                  quick ? h('button', { class: 'primary', type: 'submit' }, 'Send') : null)
+              : h('button', { class: 'link quiet', onclick: () => { sel.set(q.question, ''); ui.askOther = p.id + q.question; paint(); requestAnimationFrame(() => app.querySelector(`[data-ask="${p.id}"] .other input`)?.focus()); } }, 'Other…')));
+      }),
+      h('div', { class: 'ask-row' },
+        quick ? null : h('button', { class: 'primary send', disabled: !ready, onclick: send }, 'Send'),
+        h('button', { class: 'link quiet', onclick: () => { ui.askOther = null; post('/api/user/permission', { id: p.id, behavior: 'deny' }).catch(() => paint()); } }, 'Skip')));
   }
 
   // ----- a question Claude ended its turn with; answer it here instead of the chat -----

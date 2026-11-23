@@ -517,7 +517,14 @@ function describeTool(name, input) {
 function hookPermission(s, body, res) {
   if (!viewers(s)) return send(res, 200, { decision: null });
   const suggestions = Array.isArray(body.suggestions) ? body.suggestions : [];
-  const p = { id: newId('p'), tool: short(body.tool, 120), ...describeTool(String(body.tool || ''), body.input || {}), always: suggestions.length > 0, at: Date.now() };
+  const input = body.input || {};
+  // Claude's question dialog is a permission prompt too: show its questions, and answer it from the page.
+  const asks = body.tool === 'AskUserQuestion' && Array.isArray(input.questions) ? input.questions.slice(0, 4).map(q => ({
+    question: short(q.question, 300), header: short(q.header, 40), multi: !!q.multiSelect,
+    options: (Array.isArray(q.options) ? q.options : []).slice(0, 6).map(o => ({ label: short(o.label, 80), description: short(o.description, 200) })),
+  })) : null;
+  const p = asks ? { id: newId('p'), tool: 'AskUserQuestion', kind: 'ask', questions: asks, at: Date.now() }
+    : { id: newId('p'), tool: short(body.tool, 120), ...describeTool(String(body.tool || ''), input), always: suggestions.length > 0, at: Date.now() };
   s.permissions.push(p);
   changed(s, { touch: true });
   const done = decision => {
@@ -528,14 +535,25 @@ function hookPermission(s, body, res) {
     changed(s);
     if (!res.writableEnded) send(res, 200, { decision });
   };
-  permWaiters.set(p.id, { done, suggestions, timer: setTimeout(() => done(null), PERM_WAIT) }); // then Claude Code asks as usual
+  permWaiters.set(p.id, { done, suggestions, input, timer: setTimeout(() => done(null), PERM_WAIT) }); // then Claude Code asks as usual
   res.on('close', () => done(null)); // the hook went away (turn interrupted, timed out)
 }
-function userPermission(s, id, behavior, always) {
+function userPermission(s, id, behavior, always, answers) {
   const w = permWaiters.get(id);
-  if (!w || !s.permissions.some(p => p.id === id)) throw Object.assign(new Error('That request is no longer waiting'), { code: 409 });
+  const p = s.permissions.find(x => x.id === id);
+  if (!w || !p) throw Object.assign(new Error('That request is no longer waiting'), { code: 409 });
+  if (p.kind === 'ask' && behavior === 'allow') {
+    // Answers are keyed by the question text, as the dialog itself returns them.
+    const out = {};
+    for (const q of w.input.questions || []) {
+      const a = answers && typeof answers[q.question] === 'string' ? short(answers[q.question], 500) : '';
+      if (!a) throw Object.assign(new Error('Answer every question first'), { code: 400 });
+      out[q.question] = a;
+    }
+    return w.done({ behavior: 'allow', updatedInput: { ...w.input, answers: out } });
+  }
   if (behavior === 'allow') w.done({ behavior: 'allow', ...(always && w.suggestions.length ? { updatedPermissions: w.suggestions } : {}) });
-  else w.done({ behavior: 'deny', message: 'The user denied this on the status page.' });
+  else w.done({ behavior: 'deny', message: p.kind === 'ask' ? 'The user skipped these questions on the status page. Carry on with your best judgment, and say what you assumed.' : 'The user denied this on the status page.' });
 }
 
 // ---------- user side (the page) ----------
@@ -794,7 +812,7 @@ const server = http.createServer(async (req, res) => {
       case '/api/hook/permission':
         return hookPermission(s, body, res);
       case '/api/user/permission':
-        userPermission(s, String(body.id || ''), body.behavior === 'allow' ? 'allow' : 'deny', !!body.always);
+        userPermission(s, String(body.id || ''), body.behavior === 'allow' ? 'allow' : 'deny', !!body.always, body.answers);
         return send(res, 200, view(s));
       case '/api/hook/proof': // a tool finished without error
         noteProof(s, String(body.tool || ''), typeof body.command === 'string' ? body.command : '', 'ok');
