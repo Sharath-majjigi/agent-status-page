@@ -259,6 +259,8 @@ h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
 .res-line { margin: 6px 0 0; font-size: 18px; line-height: 1.4; font-weight: 560; text-wrap: pretty; }
 .res-open { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .res-open a { text-decoration: none; display: inline-flex; align-items: center; }
+.res-open .down { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--muted); padding: 6px 2px; }
+.res-open .down .dd { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .res-proof { margin-top: 10px; font-size: 13.5px; color: var(--muted); }
 .res-shot { flex: none; width: 132px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
 .res-shot img { display: block; width: 100%; height: 88px; object-fit: cover; object-position: top; }
@@ -519,6 +521,20 @@ footer svg { width: 14px; height: 14px; }
 
   // ----- the task is done: what came out, and how to open it -----
   const firstSentence = t => { const m = String(t || '').match(/^.+?[.!?](\s|$)/); const x = (m ? m[0] : String(t || '')).trim(); return x.length > 100 ? x.slice(0, 99).replace(/\s+\S*$/, '') + '…' : x; };
+  // Local addresses get checked: a server that stopped shows "Not running" instead of a dead link.
+  const alive = new Map(); // url -> { up, at }
+  const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost)(:\d+)?(\/|$)/i;
+  function aliveOf(url) {
+    if (!LOCAL.test(url)) return true;
+    const hit = alive.get(url);
+    if (!hit || Date.now() - hit.at > 10000) {
+      alive.set(url, { up: hit ? hit.up : undefined, at: Date.now() });
+      fetch('/api/user/alive', { method: 'POST', headers: { 'content-type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: state.id, url }) })
+        .then(r => r.json()).then(r => { const was = alive.get(url); alive.set(url, { up: r.up, at: Date.now() }); if (!was || was.up !== r.up) render(); }).catch(() => {});
+    }
+    return hit ? hit.up : undefined;
+  }
+  setInterval(() => { if (state && (state.outputs || []).some(o => o.kind === 'url' && LOCAL.test(o.target))) render(); }, 10000);
   function resultCard() {
     const m = rowsModel();
     const total = m.done.length + (state.next || []).length;
@@ -526,7 +542,7 @@ footer svg { width: 14px; height: 14px; }
     const sum = state.summary;
     const outs = state.outputs || [];
     // One short line: Claude's own "after", else what's ready to open, else the start of its closing words.
-    const line = sum ? sum.after.replace(/^./, c => c.toUpperCase()) : outs.length ? `${outs[0].name} is ready` : firstSentence(state.recap);
+    const line = sum ? sum.after.replace(/^./, c => c.toUpperCase()) : outs.length ? `${outs[0].name} ${outs[0].kind === 'url' && aliveOf(outs[0].target) === false ? 'has stopped' : 'is ready'}` : firstSentence(state.recap);
     const shot = [...(state.media || [])].reverse().find(x => x.kind === 'shot');
     const p = state.proof;
     const proof = p ? [p.tests === 'passed' && 'Tests pass', p.tests === 'failed' && 'Tests fail', p.looked && 'Checked in browser', p.pushed ? 'Pushed' : p.committed && 'Not pushed'].filter(Boolean) : [];
@@ -537,7 +553,9 @@ footer svg { width: 14px; height: 14px; }
         h('div', { class: 'res-k' }, ICON.check(), 'Done', sum ? h('span', { class: 'res-verb' }, `· ${sum.verb} ${sum.headline}`) : null),
         line ? h('p', { class: 'res-line' }, line) : null,
         outs.length ? h('div', { class: 'res-open' }, outs.flatMap((o, i) => o.kind === 'url'
-          ? h('a', { class: i ? 'btn' : 'primary', href: o.target, target: '_blank', rel: 'noopener noreferrer' }, `Open ${o.name}`)
+          ? (aliveOf(o.target) === false
+            ? h('span', { class: 'down', title: 'Nothing is answering at this address now' }, h('span', { class: 'dd' }), `${o.name} · Not running`)
+            : h('a', { class: i ? 'btn' : 'primary', href: o.target, target: '_blank', rel: 'noopener noreferrer' }, `Open ${o.name}`))
           : [h('button', { class: i ? 'btn' : 'primary', onclick: open(o, false) }, `Open ${o.name}`),
              i ? null : h('button', { class: 'link quiet', onclick: open(o, true) }, 'Show in folder')])) : null,
         proof.length ? h('div', { class: 'res-proof' }, proof.join(' · ')) : null),

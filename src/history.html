@@ -215,6 +215,7 @@ h2 { font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: u
 .outs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
 .obtn { padding: 7px 14px; border-radius: 99px; font-size: 14px; font-weight: 550; background: var(--chip); }
 .obtn.main { background: var(--text); color: var(--bg); }
+.outs .down { font-size: 14px; color: var(--muted); padding: 7px 2px; }
 .olink { font-size: 14px; color: var(--muted); padding: 7px 4px; }
 .olink:hover { color: var(--text); }
 .mgroup { margin-top: 24px; }
@@ -507,7 +508,7 @@ h2 { font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: u
     });
     const brief = h('section', { class: 'brief' },
       // No summary from Claude: one short line from what it made or its closing words.
-      !sum && ((t.outputs || []).length || t.recap) ? h('p', { class: 'resline' }, (t.outputs || []).length ? `${t.outputs[0].name} is ready` : firstSentence(t.recap)) : null,
+      !sum && ((t.outputs || []).length || t.recap) ? h('p', { class: 'resline' }, (t.outputs || []).length ? `${t.outputs[0].name} ${t.outputs[0].kind === 'url' && aliveOf(t.outputs[0].target) === false ? 'has stopped' : 'is ready'}` : firstSentence(t.recap)) : null,
       sum ? h('dl', { class: 'ba' },
         h('dt', {}, 'Before'), h('dd', {}, sum.before),
         h('dt', {}, 'After'), h('dd', {}, sum.after),
@@ -538,12 +539,25 @@ h2 { font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: u
     body: JSON.stringify({ session: t.session, key: t.key, target, reveal }) }).catch(() => {});
   const mediaUrl = m => `/media/${m.file}?t=${encodeURIComponent(TOKEN)}`;
 
+  const alive = new Map();
+  const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost)(:\d+)?(\/|$)/i;
+  function aliveOf(url) {
+    if (!LOCAL.test(url)) return true;
+    if (!alive.has(url)) {
+      alive.set(url, undefined);
+      fetch('/api/user/alive', { method: 'POST', headers: { 'content-type': 'application/json', 'x-token': TOKEN }, body: JSON.stringify({ session: (tasks.find(t => (t.outputs || []).some(o => o.target === url)) || {}).session, url }) })
+        .then(r => r.json()).then(r => { alive.set(url, r.up); if (r.up === false) route(); }).catch(() => {});
+    }
+    return alive.get(url);
+  }
   // What to open: the thing the task made.
   function outputsRow(t) {
     const outs = t.outputs || [];
     if (!outs.length) return null;
     return h('div', { class: 'outs' }, outs.flatMap((o, i) => o.kind === 'url'
-      ? h('a', { class: 'obtn' + (i ? '' : ' main'), href: o.target, target: '_blank', rel: 'noopener noreferrer' }, `Open ${o.name}`)
+      ? (aliveOf(o.target) === false
+        ? h('span', { class: 'down', title: 'Nothing is answering at this address now' }, `${o.name} · Not running`)
+        : h('a', { class: 'obtn' + (i ? '' : ' main'), href: o.target, target: '_blank', rel: 'noopener noreferrer' }, `Open ${o.name}`))
       : [h('button', { class: 'obtn' + (i ? '' : ' main'), onclick: () => openFile(t, o.target, false) }, `Open ${o.name}`),
          i ? null : h('button', { class: 'olink', onclick: () => openFile(t, o.target, true) }, 'Show in folder')]));
   }

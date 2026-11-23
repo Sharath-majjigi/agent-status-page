@@ -27,6 +27,19 @@ function attachedImages(input) {
   }
   return [...found];
 }
+// A local address Claude opened: its preview tool (by url, or by name from .claude/launch.json) or a browser visit.
+function servedUrl(input) {
+  const name = input.tool_name || '', ti = input.tool_input || {};
+  if (/(Claude_Browser__navigate|claude-in-chrome__navigate)$/.test(name)) return ti.url || '';
+  if (!/Claude_Browser__preview_start$/.test(name)) return '';
+  if (ti.url) return ti.url;
+  if (!ti.name) return '';
+  try {
+    const cfg = JSON.parse(require('fs').readFileSync(require('path').join(input.cwd || process.cwd(), '.claude', 'launch.json'), 'utf8'));
+    const c = (cfg.configurations || []).find(x => x.name === ti.name);
+    return c ? c.url || (c.port ? `http://localhost:${c.port}` : '') : '';
+  } catch { return ''; }
+}
 const bashCommand = input => input.tool_name === 'Bash' ? String((input.tool_input || {}).command || '').slice(0, 20000) : '';
 
 let raw = '';
@@ -98,6 +111,8 @@ async function main() {
         await request('POST', '/api/hook/proof', { session, tool: input.tool_name, command: bashCommand(input) }, 800).catch(() => {});
       const shot = PROOF_TOOLS.test(input.tool_name || '') && lastImage(input.tool_response);
       if (shot) await request('POST', '/api/hook/media', { session, kind: 'shot', ...shot }, 2000).catch(() => {});
+      const served = servedUrl(input);
+      if (served) await request('POST', '/api/hook/served', { session, url: served }, 800).catch(() => {});
       if (input.tool_name === 'Write' && (input.tool_input || {}).file_path) // a file Claude made: maybe the thing to open
         await request('POST', '/api/hook/wrote', { session, path: input.tool_input.file_path }, 800).catch(() => {});
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them

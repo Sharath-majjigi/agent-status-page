@@ -58,7 +58,7 @@ function blank(id) {
     next: [], agentNext: [], done: [],
     followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0, taskStartedAt: 0,
     pending: { plan: null, overrides: [], followups: [], answer: null },
-    proof: {}, summary: null, ack: [], media: [], written: [], recap: '',
+    proof: {}, summary: null, ack: [], media: [], written: [], recap: '', served: '',
     question: null, // { id, text, options, at, state: 'open' | 'sent' | 'received', answer } when Claude asked the user something
     edits: { state: 'none', at: 0 },
     shared: false,
@@ -84,7 +84,7 @@ function migrate(s) {
   s.pending.followups = s.pending.followups || [];
   if (s.pending.answer === undefined) s.pending.answer = null;
   if (s.question === undefined) s.question = null;
-  s.proof = s.proof || {}; s.ack = s.ack || []; s.media = s.media || []; s.written = s.written || []; s.recap = s.recap || ''; if (s.summary === undefined) s.summary = null;
+  s.proof = s.proof || {}; s.ack = s.ack || []; s.media = s.media || []; s.written = s.written || []; s.recap = s.recap || ''; s.served = s.served || ''; if (s.summary === undefined) s.summary = null;
   s.permissions = s.permissions || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
   if (s.now) delete s.now.file; // file names are no longer shown
@@ -405,6 +405,28 @@ function hookMedia(s, b) {
   while (s.media.length > MAX_MEDIA) { const old = s.media.findIndex(m => m.kind === 'shot'); if (old === -1) break; dropFile(s.media[old].file); s.media.splice(old, 1); }
   changed(s);
 }
+// A local address Claude opened in its browser or started with its preview tool.
+const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost)(:\d+)?(\/|$)/i;
+function hookServed(s, url) {
+  url = String(url || '').trim();
+  if (!LOCAL_URL.test(url) || url.startsWith(`http://${HOST}:${PORT}`) || url.startsWith(`http://localhost:${PORT}`)) return; // not this page itself
+  s.served = url.replace(/[?#].*$/, '');
+}
+// Is a local server answering? Only loopback addresses are checked.
+const aliveCache = new Map();
+function checkAlive(url) {
+  if (!LOCAL_URL.test(url)) return Promise.resolve(null);
+  const hit = aliveCache.get(url);
+  if (hit && Date.now() - hit.at < 5000) return Promise.resolve(hit.up);
+  return new Promise(resolve => {
+    const done = up => { aliveCache.set(url, { up, at: Date.now() }); resolve(up); };
+    try {
+      const req = http.get(url, { timeout: 1500, headers: { 'user-agent': 'status-page-check' } }, r => { r.resume(); done(true); });
+      req.on('timeout', () => { req.destroy(); done(false); });
+      req.on('error', () => done(false));
+    } catch { done(false); }
+  });
+}
 // A file Claude wrote: a candidate for "what to open".
 function hookWrote(s, file) {
   if (!file || !path.isAbsolute(file)) return;
@@ -419,7 +441,12 @@ function outputsOf(t) {
   const sum = t.summary || {};
   if (sum.open) add(sum.open);
   const recap = String(t.recap || '');
-  for (const url of recap.match(/https?:\/\/[^\s)"'>\]]+/g) || []) add({ kind: 'url', target: url.replace(/[.,;:]+$/, ''), name: url.replace(/^https?:\/\//, '').replace(/[.,;:]+$/, '') });
+  const urlOut = raw => { const target = raw.replace(/[.,;:!?`'")\]]+$/, ''); return { kind: 'url', target, name: target.replace(/^https?:\/\//, '').replace(/\/$/, '') }; };
+  for (const url of recap.match(/https?:\/\/[^\s)"'>`\]]+/g) || []) add(urlOut(url));
+  // A local server named without http:// ("running at localhost:3000").
+  for (const bare of recap.match(/(?<![\w/.:])(localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}(\/[^\s)"'>`\]]*)?/g) || []) add(urlOut('http://' + bare.replace(/^0\.0\.0\.0/, 'localhost')));
+  // No link named: the local server Claude last previewed is what there is to see, ahead of any file it wrote.
+  if (!out.some(o => o.kind === 'url') && t.served) add(urlOut(t.served));
   for (const w of t.written || []) {
     const name = path.basename(w.path);
     if (recap.includes(name) && fs.existsSync(w.path)) add({ kind: 'file', target: w.path, name });
@@ -527,9 +554,9 @@ function archiveTask(s) {
   s.earlier.unshift({
     id: newId('t'), title: s.title, startedAt: s.taskStartedAt || null, endedAt: lastActivity(s) || Date.now(),
     done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups, children,
-    proof: s.proof || null, summary: s.summary || null, ack: s.ack || [], media: (s.media || []).filter(m => !carry.includes(m)), written: s.written || [], recap: s.recap || '',
+    proof: s.proof || null, summary: s.summary || null, ack: s.ack || [], media: (s.media || []).filter(m => !carry.includes(m)), written: s.written || [], recap: s.recap || '', served: s.served || '',
   });
-  s.proof = {}; s.summary = null; s.ack = []; s.media = carry; s.written = []; s.recap = '';
+  s.proof = {}; s.summary = null; s.ack = []; s.media = carry; s.written = []; s.recap = ''; s.served = '';
   if (s.earlier.length > 40) s.earlier.length = 40;
   s.taskStartedAt = 0;
   s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
@@ -787,7 +814,7 @@ function historyList() {
     if (over) add(s, { title: s.title, startedAt: s.taskStartedAt, endedAt: Math.max(...s.done.map(d => d.at), ...s.decisions.map(d => d.at)),
       done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups,
       children: s.children.filter(c => { const x = findChild(c); return x && x.status !== 'working'; }),
-      proof: s.proof, summary: s.summary, ack: s.ack, media: s.media, written: s.written, recap: s.recap }, 'now-' + s.id);
+      proof: s.proof, summary: s.summary, ack: s.ack, media: s.media, written: s.written, recap: s.recap, served: s.served }, 'now-' + s.id);
   }
   // A push sends every earlier commit in that session too.
   const lastPush = new Map();
@@ -924,6 +951,12 @@ const server = http.createServer(async (req, res) => {
       case '/api/hook/media':
         hookMedia(s, body);
         return send(res, 200, { ok: true });
+      case '/api/hook/served':
+        hookServed(s, body.url);
+        save(s);
+        return send(res, 200, { ok: true });
+      case '/api/user/alive':
+        return send(res, 200, { up: await checkAlive(String(body.url || '')) });
       case '/api/hook/wrote':
         hookWrote(s, String(body.path || ''));
         save(s);
