@@ -64,6 +64,7 @@ const TOOLS = [
         before: { type: 'string', description: 'How it was before, at most 6 words. E.g. "Button did nothing"' },
         after: { type: 'string', description: 'How it is now, at most 6 words. E.g. "Says answer in the chat"' },
         catch: { type: 'string', description: 'Optional: the one downside the user should know, at most 6 words. Leave out if none.' },
+        open: { type: 'string', description: 'Optional: what the user should open to see the result, as a full file path or an http(s) link. E.g. "/Users/me/Desktop/game.html" or "http://localhost:3000". Leave out if nothing to open.' },
       },
       required: ['verb', 'headline', 'before', 'after'],
     },

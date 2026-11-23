@@ -251,6 +251,18 @@ h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
 .opt.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .ask-opts .link { justify-self: start; margin-left: 2px; }
 .ask .other { margin: 2px 0 0; }
+.result { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: var(--card); box-shadow: var(--shadow), inset 0 0 0 1px var(--live-soft); display: flex; gap: 16px; align-items: flex-start; animation: askIn .35s cubic-bezier(.2, .8, .2, 1) both; }
+.res-main { flex: 1; min-width: 0; }
+.res-k { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--live); }
+.res-k svg { width: 13px; height: 13px; }
+.res-verb { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); font-size: 13px; }
+.res-line { margin: 6px 0 0; font-size: 18px; line-height: 1.4; font-weight: 560; text-wrap: pretty; }
+.res-open { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.res-open a { text-decoration: none; display: inline-flex; align-items: center; }
+.res-proof { margin-top: 10px; font-size: 13.5px; color: var(--muted); }
+.res-shot { flex: none; width: 132px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+.res-shot img { display: block; width: 100%; height: 88px; object-fit: cover; object-position: top; }
+@media (max-width: 560px) { .result { flex-direction: column; } .res-shot { width: 100%; } .res-shot img { height: 140px; } }
 .ask.perm { box-shadow: var(--shadow), inset 0 0 0 1px var(--review-soft); }
 .ask.perm .ask-k { color: var(--review); }
 .ask.perm .ask-k::before { background: var(--review-mark); }
@@ -479,7 +491,7 @@ footer svg { width: 14px; height: 14px; }
 
   function page() {
     const { parent, meta } = header();
-    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), permissionCards(), questionCard(), tools(), mapSection(), otherDecisions(), footer()];
+    return [parent, meta, h('h1', {}, state.title || 'Untitled task'), permissionCards(), questionCard(), resultCard(), tools(), mapSection(), otherDecisions(), footer()];
   }
 
   // ----- where things attach -----
@@ -504,6 +516,34 @@ footer svg { width: 14px; height: 14px; }
   // Branches stay folded unless a follow-up there is still in progress, or the user opened them.
   const branchesOpen = (m, id) => ui.branchOpen.has(id) ? ui.branchOpen.get(id) : (m.followups.get(id) || []).some(f => f.state !== 'done');
   const unresolved = all => all.filter(d => d.confidence === 'low' && !d.override && !all.some(r => r.supersedes === d.id));
+
+  // ----- the task is done: what came out, and how to open it -----
+  const firstSentence = t => { const m = String(t || '').match(/^.+?[.!?](\s|$)/); const x = (m ? m[0] : String(t || '')).trim(); return x.length > 100 ? x.slice(0, 99).replace(/\s+\S*$/, '') + '…' : x; };
+  function resultCard() {
+    const m = rowsModel();
+    const total = m.done.length + (state.next || []).length;
+    if (!total || m.current || m.upcoming.length || state.status === 'working' || state.status === 'ended') return null;
+    const sum = state.summary;
+    const outs = state.outputs || [];
+    // One short line: Claude's own "after", else what's ready to open, else the start of its closing words.
+    const line = sum ? sum.after.replace(/^./, c => c.toUpperCase()) : outs.length ? `${outs[0].name} is ready` : firstSentence(state.recap);
+    const shot = [...(state.media || [])].reverse().find(x => x.kind === 'shot');
+    const p = state.proof;
+    const proof = p ? [p.tests === 'passed' && 'Tests pass', p.tests === 'failed' && 'Tests fail', p.looked && 'Checked in browser', p.pushed ? 'Pushed' : p.committed && 'Not pushed'].filter(Boolean) : [];
+    if (!line && !outs.length && !shot) return null;
+    const open = (o, reveal) => () => post('/api/user/open', { target: o.target, reveal }).catch(() => {});
+    return h('section', { class: 'result', 'aria-label': 'Result' },
+      h('div', { class: 'res-main' },
+        h('div', { class: 'res-k' }, ICON.check(), 'Done', sum ? h('span', { class: 'res-verb' }, `· ${sum.verb} ${sum.headline}`) : null),
+        line ? h('p', { class: 'res-line' }, line) : null,
+        outs.length ? h('div', { class: 'res-open' }, outs.flatMap((o, i) => o.kind === 'url'
+          ? h('a', { class: i ? 'btn' : 'primary', href: o.target, target: '_blank', rel: 'noopener noreferrer' }, `Open ${o.name}`)
+          : [h('button', { class: i ? 'btn' : 'primary', onclick: open(o, false) }, `Open ${o.name}`),
+             i ? null : h('button', { class: 'link quiet', onclick: open(o, true) }, 'Show in folder')])) : null,
+        proof.length ? h('div', { class: 'res-proof' }, proof.join(' · ')) : null),
+      shot ? h('a', { class: 'res-shot', href: `/media/${shot.file}?t=${encodeURIComponent(TOKEN)}`, target: '_blank', rel: 'noopener', title: shot.step ? `Screenshot: ${shot.step}` : 'Screenshot' },
+        h('img', { src: `/media/${shot.file}?t=${encodeURIComponent(TOKEN)}`, alt: shot.step ? `Screenshot from ${shot.step}` : 'Screenshot' })) : null);
+  }
 
   function tools() {
     const m = rowsModel();

@@ -6,7 +6,7 @@
 //   node cli.js plan "Title" "First step" "Second step" ...   (title "" keeps the current one)
 //   node cli.js now "What you're doing"
 //   node cli.js decision "The choice" "Why, in one line" high|medium|low [id-it-replaces]
-//   node cli.js summary Fixed "Headline" "Before" "After" ["Catch"]
+//   node cli.js summary Fixed "Headline" "Before" "After" ["Catch"] [--open <path or link>]
 //   node cli.js followup-done f1
 //   node cli.js edits
 //
@@ -19,19 +19,22 @@ const USAGE = `Usage:
   plan "Title" "Step" "Step" ...
   now "What you're doing"
   decision "The choice" "Why" high|medium|low [id it replaces]
-  summary Fixed|Added|Changed|Removed "Headline" "Before" "After" ["Catch"]
+  summary Fixed|Added|Changed|Removed "Headline" "Before" "After" ["Catch"] [--open <path or link>]
   followup-done <id>
   edits`;
 
 (async () => {
   const session = process.env.CLAUDE_CODE_SESSION_ID;
   if (!session) return fail('Run this from Claude Code (its Bash tool), so the page knows which session it is.');
-  const [cmd, ...a] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const oi = argv.indexOf('--open');
+  const open = oi !== -1 ? argv.splice(oi, 2)[1] : undefined;
+  const [cmd, ...a] = argv;
   let name, args;
   if (cmd === 'plan' && a.length >= 1) { name = 'update_plan'; args = { title: a[0] || undefined, next: a.slice(1) }; }
   else if (cmd === 'now' && a[0]) { name = 'set_now'; args = { doing: a[0] }; }
   else if (cmd === 'decision' && a[1]) { name = 'record_decision'; args = { decision: a[0], reason: a[1], confidence: a[2] || 'medium', ...(a[3] ? { supersedes: a[3] } : {}) }; }
-  else if (cmd === 'summary' && a[3]) { name = 'summarize_task'; args = { verb: a[0], headline: a[1], before: a[2], after: a[3], catch: a[4] || '' }; }
+  else if (cmd === 'summary' && a[3]) { name = 'summarize_task'; args = { verb: a[0], headline: a[1], before: a[2], after: a[3], catch: a[4] || '', ...(open ? { open } : {}) }; }
   else if (cmd === 'followup-done' && a[0]) { name = 'followup_done'; args = { id: a[0] }; }
   else if (cmd === 'edits') { name = 'get_user_edits'; args = {}; }
   else return fail(USAGE);

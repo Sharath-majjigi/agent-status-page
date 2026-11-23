@@ -58,7 +58,7 @@ function blank(id) {
     next: [], agentNext: [], done: [],
     followups: [], children: [], hostId: '', parent: null, stepStartedAt: 0, taskStartedAt: 0,
     pending: { plan: null, overrides: [], followups: [], answer: null },
-    proof: {}, summary: null, ack: [],
+    proof: {}, summary: null, ack: [], media: [], written: [], recap: '',
     question: null, // { id, text, options, at, state: 'open' | 'sent' | 'received', answer } when Claude asked the user something
     edits: { state: 'none', at: 0 },
     shared: false,
@@ -84,7 +84,7 @@ function migrate(s) {
   s.pending.followups = s.pending.followups || [];
   if (s.pending.answer === undefined) s.pending.answer = null;
   if (s.question === undefined) s.question = null;
-  s.proof = s.proof || {}; s.ack = s.ack || []; if (s.summary === undefined) s.summary = null;
+  s.proof = s.proof || {}; s.ack = s.ack || []; s.media = s.media || []; s.written = s.written || []; s.recap = s.recap || ''; if (s.summary === undefined) s.summary = null;
   s.permissions = s.permissions || [];
   for (const d of s.done) if (!d.id) d.id = newId('n');
   if (s.now) delete s.now.file; // file names are no longer shown
@@ -105,6 +105,8 @@ function view(s) {
   rest.children = s.children.map(c => ({ ...c, ...childInfo(c) }));
   const parent = s.parent && sessions.get(s.parent);
   rest.parent = parent ? { id: parent.id, title: parent.title } : null;
+  rest.outputs = outputsOf(s); rest.proof = proofOf(s.proof);
+  delete rest.written;
   return rest;
 }
 function childInfo(c) {
@@ -358,6 +360,95 @@ function sameTask(s, texts) {
   return texts.filter(t => have.has(t)).length * 2 >= texts.length;
 }
 // The first plan of a task marks when it started (shown in history).
+// ---------- media and outputs: what you gave, what Claude made, and what to open ----------
+const MEDIA_DIR = path.join(HOME, 'media');
+fs.mkdirSync(MEDIA_DIR, { recursive: true, mode: 0o700 });
+// Media is kept as long as the history that shows it.
+try { for (const f of fs.readdirSync(MEDIA_DIR)) { const p = path.join(MEDIA_DIR, f); if (Date.now() - fs.statSync(p).mtimeMs > KEEP) fs.unlinkSync(p); } } catch {}
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+const DOC_EXT = /\.(md|pdf|docx?|pptx?|xlsx?|csv|png|jpe?g|gif|webp|svg|html?|txt)$/i;
+const MAX_MEDIA = 16;
+
+function stepLabel(s) {
+  const id = currentStepId(s);
+  const step = s.next.find(n => n.id === id) || s.done.find(d => d.id === id) || s.done[s.done.length - 1];
+  return step ? step.text : '';
+}
+function storeImage(buf, ext) {
+  const file = newId('m') + '.' + ext;
+  fs.writeFileSync(path.join(MEDIA_DIR, file), buf, { mode: 0o600 });
+  return file;
+}
+function dropFile(file) { try { fs.unlinkSync(path.join(MEDIA_DIR, path.basename(file))); } catch {} }
+
+// A screenshot Claude took (base64 from the tool result) or an image you attached (a local path).
+function hookMedia(s, b) {
+  s.media = s.media || [];
+  if (b.kind === 'shot') {
+    const type = Object.entries(IMAGE_TYPES).find(([, t]) => t === b.mediaType);
+    if (!type || typeof b.data !== 'string') return;
+    const buf = Buffer.from(b.data, 'base64');
+    if (buf.length < 2000 || buf.length > 8 * 1024 * 1024) return; // tiny crops aren't worth showing
+    const step = stepLabel(s);
+    // Keep the last screenshot of each step: the earlier ones were on the way there.
+    const prev = s.media.findIndex(m => m.kind === 'shot' && m.step === step);
+    if (prev !== -1) { dropFile(s.media[prev].file); s.media.splice(prev, 1); }
+    s.media.push({ id: newId('m'), kind: 'shot', file: storeImage(buf, type[0]), step, at: Date.now() });
+  } else if (b.kind === 'you') {
+    const src = String(b.path || '');
+    const ext = (path.extname(src).slice(1) || '').toLowerCase();
+    if (!IMAGE_TYPES[ext] || s.media.some(m => m.src === src)) return;
+    let buf;
+    try { if (fs.statSync(src).size > 10 * 1024 * 1024) return; buf = fs.readFileSync(src); } catch { return; }
+    s.media.push({ id: newId('m'), kind: 'you', file: storeImage(buf, ext), src, name: path.basename(src), step: '', at: Date.now() });
+  } else return;
+  while (s.media.length > MAX_MEDIA) { const old = s.media.findIndex(m => m.kind === 'shot'); if (old === -1) break; dropFile(s.media[old].file); s.media.splice(old, 1); }
+  changed(s);
+}
+// A file Claude wrote: a candidate for "what to open".
+function hookWrote(s, file) {
+  if (!file || !path.isAbsolute(file)) return;
+  s.written = (s.written || []).filter(w => w.path !== file);
+  s.written.push({ path: file, step: stepLabel(s), at: Date.now() });
+  if (s.written.length > 40) s.written = s.written.slice(-40);
+}
+// What the finished task produced: what Claude named, or a link or a file named in its closing words.
+function outputsOf(t) {
+  const out = [];
+  const add = o => { if (o && !out.some(x => x.target === o.target)) out.push(o); };
+  const sum = t.summary || {};
+  if (sum.open) add(sum.open);
+  const recap = String(t.recap || '');
+  for (const url of recap.match(/https?:\/\/[^\s)"'>\]]+/g) || []) add({ kind: 'url', target: url.replace(/[.,;:]+$/, ''), name: url.replace(/^https?:\/\//, '').replace(/[.,;:]+$/, '') });
+  for (const w of t.written || []) {
+    const name = path.basename(w.path);
+    if (recap.includes(name) && fs.existsSync(w.path)) add({ kind: 'file', target: w.path, name });
+  }
+  return out.slice(0, 3);
+}
+// Files Claude made that are worth a look (documents and images), beyond the code.
+function docsOf(t) {
+  return (t.written || []).filter(w => DOC_EXT.test(w.path) && fs.existsSync(w.path) && !/\/(src|lib|node_modules|\.git)\//.test(w.path))
+    .slice(-6).map(w => ({ name: path.basename(w.path), target: w.path, step: w.step }));
+}
+// Open a file on this machine, as a double-click would. Only files Claude made or named in that task.
+function userOpen(t, target, reveal) {
+  const allowed = [...outputsOf(t), ...docsOf(t)].some(o => o.kind !== 'url' && o.target === target);
+  if (!allowed || !fs.existsSync(target)) throw Object.assign(new Error('That file can’t be opened from here'), { code: 403 });
+  const { execFile } = require('child_process');
+  if (process.platform === 'darwin') execFile('open', reveal ? ['-R', target] : [target]);
+  else if (process.platform === 'win32') execFile('explorer', reveal ? ['/select,', target] : [target]);
+  else execFile('xdg-open', [reveal ? path.dirname(target) : target]);
+}
+function agentOpen(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return null;
+  if (/^https?:\/\//.test(v)) return { kind: 'url', target: v, name: v.replace(/^https?:\/\//, '') };
+  const p = v.replace(/^~(?=\/)/, require('os').homedir());
+  if (path.isAbsolute(p) && fs.existsSync(p)) return { kind: 'file', target: p, name: path.basename(p) };
+  return undefined; // given, but not something we can open
+}
+
 // ---------- proof: what the page saw happen, not what the agent says ----------
 const TEST_CMD = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(pytest|jest|vitest|rspec|phpunit|mocha)\b|\bgo test\b|\bcargo test\b|\bnode --test\b|\bmake (test|check)\b|\bpython3? -m (pytest|unittest)\b|\bswift test\b|\b(gradlew?|mvn)\b[^|;&]*\btest\b|\bxcodebuild\b[^|;&]*\btest\b/;
 const GIT = verb => new RegExp(`\\bgit\\s+(-C\\s+\\S+\\s+)?${verb}\\b`);
@@ -394,7 +485,9 @@ function agentSummary(s, b) {
   check('headline', 5, true); check('before', 6, true); check('after', 6, true); check('catch', 6, false);
   if (problems.length) return { ok: false, message: `Not saved: ${problems.join('; ')}. Use plain everyday words, no jargon, and try again.` };
   const clean = t => words(t).join(' ').replace(/[.]+$/, '');
-  const summary = { verb, headline: clean(b.headline), before: clean(b.before), after: clean(b.after), catch: clean(b.catch) || '', at: Date.now() };
+  const open = agentOpen(b.open);
+  if (open === undefined) return { ok: false, message: `Not saved: open must be a full file path that exists, or an http(s) link. Got "${short(b.open, 80)}".` };
+  const summary = { verb, headline: clean(b.headline), before: clean(b.before), after: clean(b.after), catch: clean(b.catch) || '', open, at: Date.now() };
   // Written just after the task was filed away: it belongs to that task.
   const last = s.earlier[0];
   if (!s.done.length && !s.next.length && last && !last.summary && Date.now() - (last.endedAt || 0) < 30 * 60 * 1000) last.summary = summary;
@@ -428,12 +521,15 @@ function archiveTask(s) {
   const running = c => { const x = findChild(c); return !x || x.status === 'working'; };
   const children = s.children.filter(c => !running(c)).map(c => ({ ...c, ...childInfo(c) }));
   s.children = s.children.filter(running);
+  // Images you attached after the old task's last step came with the new request.
+  const cut = lastActivity(s);
+  const carry = (s.media || []).filter(m => m.kind === 'you' && cut && m.at > cut);
   s.earlier.unshift({
     id: newId('t'), title: s.title, startedAt: s.taskStartedAt || null, endedAt: lastActivity(s) || Date.now(),
     done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups, children,
-    proof: s.proof || null, summary: s.summary || null, ack: s.ack || [],
+    proof: s.proof || null, summary: s.summary || null, ack: s.ack || [], media: (s.media || []).filter(m => !carry.includes(m)), written: s.written || [], recap: s.recap || '',
   });
-  s.proof = {}; s.summary = null; s.ack = [];
+  s.proof = {}; s.summary = null; s.ack = []; s.media = carry; s.written = []; s.recap = '';
   if (s.earlier.length > 40) s.earlier.length = 40;
   s.taskStartedAt = 0;
   s.done = []; s.next = []; s.agentNext = []; s.decisions = []; s.followups = [];
@@ -491,6 +587,7 @@ function hookQuestion(s, input) {
   // Wrapping up checks off the whole task list in the app, without another task-list update: do the same here.
   if (Array.isArray(s.tasks) && s.tasks.some(t => t.status !== 'completed'))
     hookTasks(s, { items: s.tasks.map(t => ({ content: t.text, status: 'completed' })) });
+  if (input && input.recap) s.recap = short(input.recap, 600);
   const ask = short(input && input.ask, 300);
   if (!ask) { if (s.question && s.question.state !== 'sent') { s.question = null; changed(s); } return; } // the turn ended with nothing to ask
   const options = (Array.isArray(input.actions) ? input.actions : []).filter(a => a && !a.action && a.label).map(a => short(a.label, 40)).slice(0, 3);
@@ -680,6 +777,8 @@ function historyList() {
     done: t.done, dropped: t.dropped, decisions: t.decisions, followups: t.followups,
     children: (t.children || []).map(c => ({ ...c, ...childInfo(c) })),
     proof: proofOf(t.proof), summary: t.summary || null, ack: t.ack || [],
+    media: (t.media || []).map(({ id, kind, file, name, step, at }) => ({ id, kind, file, name, step, at })),
+    outputs: outputsOf(t), docs: docsOf(t), recap: t.recap || '',
   });
   for (const s of sessions.values()) {
     for (const t of s.earlier || []) add(s, t, t.id);
@@ -688,7 +787,7 @@ function historyList() {
     if (over) add(s, { title: s.title, startedAt: s.taskStartedAt, endedAt: Math.max(...s.done.map(d => d.at), ...s.decisions.map(d => d.at)),
       done: s.done, dropped: s.next.map(n => n.text), decisions: s.decisions, followups: s.followups,
       children: s.children.filter(c => { const x = findChild(c); return x && x.status !== 'working'; }),
-      proof: s.proof, summary: s.summary, ack: s.ack }, 'now-' + s.id);
+      proof: s.proof, summary: s.summary, ack: s.ack, media: s.media, written: s.written, recap: s.recap }, 'now-' + s.id);
   }
   // A push sends every earlier commit in that session too.
   const lastPush = new Map();
@@ -706,11 +805,11 @@ function send(res, code, body, type = 'application/json') {
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
-function readBody(req) {
+function readBody(req, max = 256 * 1024) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.setEncoding('utf8');
-    req.on('data', d => { raw += d; if (raw.length > 256 * 1024) { reject(Object.assign(new Error('too large'), { code: 413 })); req.destroy(); } });
+    req.on('data', d => { raw += d; if (raw.length > max) { reject(Object.assign(new Error('too large'), { code: 413 })); req.destroy(); } });
     req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(Object.assign(new Error('bad json'), { code: 400 })); } });
   });
 }
@@ -735,9 +834,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && (p === '/' || p === '/history')) {
       res.writeHead(200, {
         'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer',
-        'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       });
       return fs.createReadStream(p === '/' ? PAGE : HISTORY_PAGE).pipe(res);
+    }
+    if (req.method === 'GET' && p.startsWith('/media/')) { // screenshots and attachments, behind the same token
+      const file = path.basename(p.slice(7));
+      const type = IMAGE_TYPES[path.extname(file).slice(1).toLowerCase()];
+      const full = path.join(MEDIA_DIR, file);
+      if (!type || !/^m[a-z0-9]+\.[a-z]+$/.test(file) || !fs.existsSync(full)) return send(res, 404, { error: 'not found' });
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' });
+      return fs.createReadStream(full).pipe(res);
     }
     if (req.method === 'GET' && p === '/api/history') return send(res, 200, { tasks: historyList() });
 
@@ -771,7 +878,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST') return send(res, 404, { error: 'not found' });
     // A browser can't add this header to a cross-site form post, so page writes need it.
     if (!(req.headers['content-type'] || '').startsWith('application/json')) return send(res, 415, { error: 'json only' });
-    const body = await readBody(req);
+    const body = await readBody(req, p === '/api/hook/media' ? 12 * 1024 * 1024 : undefined);
     if (p === '/api/diagnose') { // for /status-page:open: why might this session's page be empty? (never creates a session)
       const x = sessions.get(pidAlias.get(String(body.session)) || String(body.session));
       return send(res, 200, { hooks: !!(x && (x.hookAt || x.cwd)), tools: !!(x && x.toolsAt), task: !!(x && (x.title || x.next.length || x.done.length)) });
@@ -814,6 +921,20 @@ const server = http.createServer(async (req, res) => {
       case '/api/user/permission':
         userPermission(s, String(body.id || ''), body.behavior === 'allow' ? 'allow' : 'deny', !!body.always, body.answers);
         return send(res, 200, view(s));
+      case '/api/hook/media':
+        hookMedia(s, body);
+        return send(res, 200, { ok: true });
+      case '/api/hook/wrote':
+        hookWrote(s, String(body.path || ''));
+        save(s);
+        return send(res, 200, { ok: true });
+      case '/api/user/open': {
+        const key = String(body.key || '');
+        const t = key === 'now-' + s.id || !key ? s : s.earlier.find(e => e.id === key);
+        if (!t) return send(res, 404, { error: 'No such task' });
+        userOpen(t, String(body.target || ''), !!body.reveal);
+        return send(res, 200, { ok: true });
+      }
       case '/api/hook/proof': // a tool finished without error
         noteProof(s, String(body.tool || ''), typeof body.command === 'string' ? body.command : '', 'ok');
         save(s);

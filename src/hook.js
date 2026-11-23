@@ -8,6 +8,25 @@ const { request, ensureServer, HOME } = require('./client');
 const mode = process.argv[2];
 const OWN_TOOLS = /^mcp__plugin_status-page_status__/;
 const PROOF_TOOLS = /Claude_Browser|claude-in-chrome|Claude_Code_iOS_Simulator|playwright|puppeteer/i;
+// The last image in a tool result (a screenshot), as { mediaType, data }.
+function lastImage(resp) {
+  let found = null;
+  const walk = x => { if (!x || typeof x !== 'object') return; if (Array.isArray(x)) return x.forEach(walk);
+    if (x.type === 'image' && x.source && x.source.type === 'base64') found = { mediaType: x.source.media_type, data: x.source.data };
+    else for (const v of Object.values(x)) if (v && typeof v === 'object') walk(v); };
+  walk(resp);
+  return found;
+}
+// Images you attached to this message: the desktop app saves them next to the session's scratchpad.
+function attachedImages(input) {
+  const fs = require('fs'), path = require('path');
+  const found = new Set((String(input.prompt || '').match(/\[Image: source: ([^\]]+)\]/g) || []).map(m => m.slice(15, -1).trim()));
+  if (input.scratchpad_dir) {
+    const dir = path.join(path.dirname(input.scratchpad_dir), 'images');
+    try { for (const f of fs.readdirSync(dir)) { const p = path.join(dir, f); if (Date.now() - fs.statSync(p).mtimeMs < 120000) found.add(p); } } catch {}
+  }
+  return [...found];
+}
 const bashCommand = input => input.tool_name === 'Bash' ? String((input.tool_input || {}).command || '').slice(0, 20000) : '';
 
 let raw = '';
@@ -77,6 +96,10 @@ async function main() {
       if (OWN_TOOLS.test(input.tool_name || '')) return; // those results already carry edits
       if (input.tool_name === 'Bash' || PROOF_TOOLS.test(input.tool_name || '')) // what actually happened: tests, commits, pushes, looking at the result
         await request('POST', '/api/hook/proof', { session, tool: input.tool_name, command: bashCommand(input) }, 800).catch(() => {});
+      const shot = PROOF_TOOLS.test(input.tool_name || '') && lastImage(input.tool_response);
+      if (shot) await request('POST', '/api/hook/media', { session, kind: 'shot', ...shot }, 2000).catch(() => {});
+      if (input.tool_name === 'Write' && (input.tool_input || {}).file_path) // a file Claude made: maybe the thing to open
+        await request('POST', '/api/hook/wrote', { session, path: input.tool_input.file_path }, 800).catch(() => {});
       if (input.agent_id) return; // edits are for the main agent; a subagent would swallow them
       if (/^(TodoWrite|mcp__.+__update_plan)$/.test(input.tool_name || '')) // the agent's own task list: the page follows it
         await request('POST', '/api/hook/tasks', { session, input: input.tool_input || {} }, 1500).catch(() => {});
@@ -92,6 +115,7 @@ async function main() {
     }
     case 'prompt': {
       await request('POST', '/api/hook/activity', { session, status: 'working', prompt: String(input.prompt || '') }, 800).catch(() => {});
+      for (const p of attachedImages(input)) await request('POST', '/api/hook/media', { session, kind: 'you', path: p }, 1500).catch(() => {});
       const message = await take(session, { prompt: true }); // typing here also lifts a pause
       if (message) print({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: message } });
       return;
