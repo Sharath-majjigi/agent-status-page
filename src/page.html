@@ -132,6 +132,11 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 .kicker.now { color: var(--live); }
 .kicker .t { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .activity { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+.live-shot, .step-shot { display: block; position: relative; margin: 8px 0 10px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); max-width: 360px; background: var(--card); }
+.live-shot img, .step-shot img { display: block; width: 100%; height: 180px; object-fit: cover; object-position: top; }
+.shot-cap { position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; background: rgba(16, 19, 31, .62); }
+.live-shot { animation: shot-in .25s ease-out; }
+@keyframes shot-in { from { opacity: .4; } }
 .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .btn { padding: 6px 12px; border-radius: 9px; background: var(--chip); font-size: 14px; color: var(--text); }
 .btn:hover { background: var(--hover); }
@@ -366,6 +371,7 @@ footer svg { width: 14px; height: 14px; }
     if (m < 60) return `${m}m`;
     return `${Math.floor(m / 60)}h ${m % 60}m`;
   };
+  const shotAge = t => { const a = ago(t); return `Screenshot · ${a === 'just now' ? a : a + ' ago'}`; };
   const since = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? `${s}s` : ago(t); };
   const dur = ms => {
     if (ms == null) return '';
@@ -603,6 +609,21 @@ footer svg { width: 14px; height: 14px; }
     return h('ol', { class: 'vmap', 'aria-label': 'Steps' }, rows);
   }
 
+  // The last screenshot Claude took during a step, from this task only.
+  function shotFor(step, kind) {
+    const shots = (state.media || []).filter(x => x.kind === 'shot' && (!state.taskStartedAt || x.at >= state.taskStartedAt - 1000));
+    const mine = shots.filter(x => x.stepId ? x.stepId === step.id : x.step === step.text);
+    if (mine.length) return mine[mine.length - 1];
+    // A plain Working row has no step of its own: whatever was taken since this step began.
+    return kind === 'now' && step.id === '_now' ? shots.filter(x => x.at >= (state.stepStartedAt || 0)).pop() : null;
+  }
+  function shotLink(shot, cls) {
+    const src = `/media/${shot.file}?t=${encodeURIComponent(TOKEN)}`;
+    return h('a', { class: cls, href: src, target: '_blank', rel: 'noopener', title: 'Open the full screenshot', onclick: e => e.stopPropagation() },
+      h('img', { src, alt: shot.step ? `Screenshot from ${shot.step}` : 'Screenshot', loading: 'lazy' }),
+      h('span', { class: 'shot-cap', 'data-at': shot.at }, shotAge(shot.at)));
+  }
+
   function row(step, kind, m, openId) {
     const open = openId === step.id;
     const decs = m.decisions.get(step.id) || [];
@@ -626,7 +647,8 @@ footer svg { width: 14px; height: 14px; }
               h('button', { class: 'icon handle', 'aria-label': 'Drag to reorder', title: 'Drag to reorder', onpointerdown: e => startDrag(e, li) }, ICON.grip())),
             n ? branchToggle(step.id, m, folded) : null,
             time)),
-        open && !(step.id === '_now' && !decs.length) && card(step, kind, decs, m), // nothing to show under a plain Working row
+        live && !open && shotFor(step, kind) ? shotLink(shotFor(step, kind), 'live-shot') : null, // what Claude is looking at right now
+        open && !(step.id === '_now' && !decs.length && !shotFor(step, kind)) && card(step, kind, decs, m), // nothing to show under a plain Working row
         ((n && !folded) || ui.fuAdding === step.id) && branches(step, kind, m)));
     return li;
   }
@@ -653,6 +675,7 @@ footer svg { width: 14px; height: 14px; }
     return h('div', { class: 'vcard', onclick: e => e.stopPropagation() },
       kicker,
       activity && h('p', { class: 'activity' }, activity),
+      shotFor(step, kind) ? shotLink(shotFor(step, kind), 'step-shot') : null,
       decs.length ? decisionList(decs) : null,
       step.id === '_now' ? null : h('div', { class: 'actions' },
         h('button', { class: 'btn fu-btn', onclick: () => { ui.fuAdding = step.id; ui.branchOpen.set(step.id, true); paint(); app.querySelector('.fu input')?.focus(); } }, '+ Follow-up'),
@@ -1007,6 +1030,7 @@ footer svg { width: 14px; height: 14px; }
       const t = since(Number(el.dataset.at));
       el.textContent = el.classList.contains('t') ? '· ' + t : t;
     }
+    for (const el of app.querySelectorAll('.shot-cap')) el.textContent = shotAge(Number(el.dataset.at));
   }, 5000);
 
   paint();

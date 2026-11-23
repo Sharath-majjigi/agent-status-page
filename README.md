@@ -19,7 +19,7 @@ Needs Node 18+. Sessions you start after installing get everything. In a session
 
 Give Claude any multi-step task and open the page with `/status-page:open`. The map fills in by itself from the task list Claude already keeps (the desktop app's list, or its to-dos in the terminal), so it never goes blank while Claude works. Claude adds its decisions on top.
 
-- **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead.
+- **The map:** every step on one line, with what's done, what's running now, and what's next. Tap a step to open it: what it's doing and the decisions made there. Unsure decisions are marked *review*; click **Change** to say what to do instead. When Claude takes a screenshot (in a browser or the simulator), the step it's on shows it right away, so you see what Claude sees. Open a finished step to see its last screenshot.
 - **Next up:** rename, reorder (drag or Move up/down), remove, or add steps.
 - **Follow-ups:** add one to any step, even a finished one, and it branches off the map as a blue square: waiting, then *agent has it*, then done. Branches fold into a small badge once they're done; click it to open them.
 - **Side sessions:** sessions the agent starts show as linked branches with their own progress. Click one to open its page.

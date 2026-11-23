@@ -389,11 +389,11 @@ function hookMedia(s, b) {
     if (!type || typeof b.data !== 'string') return;
     const buf = Buffer.from(b.data, 'base64');
     if (buf.length < 2000 || buf.length > 8 * 1024 * 1024) return; // tiny crops aren't worth showing
-    const step = stepLabel(s);
+    const step = stepLabel(s), stepId = currentStepId(s);
     // Keep the last screenshot of each step: the earlier ones were on the way there.
-    const prev = s.media.findIndex(m => m.kind === 'shot' && m.step === step);
+    const prev = s.media.findIndex(m => m.kind === 'shot' && (stepId && m.stepId ? m.stepId === stepId : m.step === step));
     if (prev !== -1) { dropFile(s.media[prev].file); s.media.splice(prev, 1); }
-    s.media.push({ id: newId('m'), kind: 'shot', file: storeImage(buf, type[0]), step, at: Date.now() });
+    s.media.push({ id: newId('m'), kind: 'shot', file: storeImage(buf, type[0]), step, stepId, at: Date.now() });
   } else if (b.kind === 'you') {
     const src = String(b.path || '');
     const ext = (path.extname(src).slice(1) || '').toLowerCase();
